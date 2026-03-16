@@ -182,7 +182,7 @@ jobs:
           check "user-init executed" "docker exec coding-agent test -f /tmp/user-init-ran"
           check "user-init log persisted" "docker exec coding-agent grep -q 'user-init-ran' /tmp/user-init-ran.log"
           check "background skill log exists" "docker exec coding-agent test -f /var/log/entrypoint-skills.log"
-          check "host->container persistence" "echo host-\$(date +%s) > '${GITHUB_WORKSPACE}/.ci-data/projects/host-sync.txt' && docker exec coding-agent sh -lc 'cat /home/node/projects/host-sync.txt' | grep -q '^host-'"
+          check "host->container persistence" "sudo mkdir -p '${GITHUB_WORKSPACE}/.ci-data/projects' && echo host-\$(date +%s) | sudo tee '${GITHUB_WORKSPACE}/.ci-data/projects/host-sync.txt' >/dev/null && docker exec coding-agent sh -lc 'cat /home/node/projects/host-sync.txt' | grep -q '^host-'"
           check "container->host persistence" "docker exec coding-agent sh -lc 'echo container-\$(date +%s) > /home/node/projects/container-sync.txt' && grep -q '^container-' '${GITHUB_WORKSPACE}/.ci-data/projects/container-sync.txt'"
           check "task-master help as node" "docker exec -u node coding-agent bash -c 'task-master --help >/dev/null'"
 
