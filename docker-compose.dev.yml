@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  coding-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: coding-agent:dev
+    extends:
+      file: docker-compose.yml
+      service: coding-agent

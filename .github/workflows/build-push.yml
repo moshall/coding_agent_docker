@@ -1,0 +1,214 @@
+name: Build Test Publish GHCR
+
+on:
+  push:
+    branches:
+      - main
+  # 07:00 Asia/Shanghai == 23:00 UTC (previous day)
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reclaim disk for large image build
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/share/dotnet || true
+          docker system prune -af || true
+          df -h
+
+      - name: Compute tags
+        id: tags
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          date_tag="$(date -u +%Y%m%d)"
+          echo "latest=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          echo "sha=${IMAGE}:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "date=${IMAGE}:date-${date_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare CI env and data root
+        run: |
+          cat > .env <<EOF
+          DATA_ROOT=${GITHUB_WORKSPACE}/.ci-data
+          CONTAINER_NAME=coding-agent
+          TZ=Asia/Shanghai
+          NODE_ENV=development
+          ANTHROPIC_API_KEY=sk-ant-test
+          OPENAI_API_KEY=sk-test
+          GEMINI_API_KEY=AIza-test
+          TASKMASTER_MAIN_PROVIDER=anthropic
+          TASKMASTER_MAIN_MODEL=claude-sonnet-4-20250514
+          PORT_CC_CONNECT=8080
+          PORT_RALPH=3000
+          PORT_DEV=9000
+          MOUNT_OPENCLAW=
+          MOUNT_EXTRA_1=
+          MOUNT_EXTRA_2=
+          MOUNT_EXTRA_3=
+          DOCKER_IMAGE=coding-agent:dev
+          EOF
+
+          rm -rf "${GITHUB_WORKSPACE}/.ci-data"
+          mkdir -p "${GITHUB_WORKSPACE}/.ci-data"
+          cat > "${GITHUB_WORKSPACE}/.ci-data/user-init.sh" <<'EOF'
+          #!/usr/bin/env bash
+          echo "$(date -Iseconds) user-init-ran" >> /tmp/user-init-ran.log
+          touch /tmp/user-init-ran
+          EOF
+          chmod +x "${GITHUB_WORKSPACE}/.ci-data/user-init.sh"
+
+      - name: Compose config check
+        run: docker compose -f docker-compose.dev.yml config > /tmp/compose-config.txt
+
+      - name: Ensure /dev/net/tun exists on runner
+        run: |
+          if [[ ! -e /dev/net/tun ]]; then
+            sudo mkdir -p /dev/net
+            sudo mknod /dev/net/tun c 10 200 || true
+          fi
+          sudo chmod 666 /dev/net/tun || true
+          ls -l /dev/net/tun || true
+
+      - name: Build image (no cache)
+        run: docker compose -f docker-compose.dev.yml build --no-cache
+
+      - name: Start container
+        run: docker compose -f docker-compose.dev.yml up -d --force-recreate
+
+      - name: Wait for container readiness
+        run: |
+          for i in $(seq 1 30); do
+            status="$(docker inspect coding-agent --format '{{.State.Status}}' 2>/dev/null || true)"
+            pid1_user="$(docker exec coding-agent ps -o user= -p 1 2>/dev/null | tr -d '[:space:]' || true)"
+            echo "check#$i status=${status} pid1_user=${pid1_user:-N/A}"
+            if [[ "${status}" == "running" && "${pid1_user}" == "node" ]]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "container failed readiness checks"
+          docker logs --tail 200 coding-agent || true
+          exit 1
+
+      - name: Regression checks
+        run: |
+          set +e
+          pass=0
+          fail=0
+          skip=0
+
+          check() {
+            name="$1"
+            cmd="$2"
+            out="$(bash -lc "$cmd" 2>&1)"
+            rc=$?
+            first="$(printf '%s' "$out" | head -n 1)"
+            if [[ $rc -eq 0 ]]; then
+              echo "[PASS] $name :: ${first:-ok}"
+              pass=$((pass+1))
+            else
+              second="$(printf '%s' "$out" | sed -n '2p')"
+              echo "[FAIL] $name :: ${first}${second:+ | $second}"
+              fail=$((fail+1))
+            fi
+          }
+
+          skip_check() {
+            name="$1"
+            reason="$2"
+            echo "[SKIP] $name :: $reason"
+            skip=$((skip+1))
+          }
+
+          check "container running" "docker inspect coding-agent --format '{{.State.Status}}' | grep -qx running"
+          check "pid1 is node" "docker exec coding-agent ps -o user= -p 1 | tr -d '[:space:]' | grep -qx node"
+          check "restart count zero" "docker inspect coding-agent --format '{{.RestartCount}}' | grep -qx 0"
+          check "cron process" "docker exec coding-agent pgrep -x cron >/dev/null"
+
+          if [[ -e /dev/net/tun ]]; then
+            check "tailscaled process" "docker exec coding-agent pgrep -x tailscaled >/dev/null"
+          else
+            skip_check "tailscaled process" "/dev/net/tun unavailable on runner"
+          fi
+
+          check "claude CLI" "docker exec coding-agent sh -lc 'claude --version'"
+          check "codex CLI" "docker exec coding-agent sh -lc 'codex --version'"
+          check "gemini CLI (node clean)" "docker exec -u node coding-agent sh -lc 'gemini --version 2>&1 | tee /tmp/gemini-v.log >/dev/null; ! grep -q \"Failed to save project registry\" /tmp/gemini-v.log; ! grep -q \"unexpected critical error\" /tmp/gemini-v.log; grep -E \"^[0-9]+\\.[0-9]+\\.[0-9]+\" /tmp/gemini-v.log >/dev/null'"
+          check "opencode CLI" "docker exec coding-agent sh -lc 'opencode --version'"
+          check "task-master CLI" "docker exec coding-agent sh -lc 'task-master --version'"
+          check "ccman CLI" "docker exec coding-agent sh -lc 'ccman --version'"
+          check "cc-connect binary" "docker exec coding-agent sh -lc 'command -v cc-connect'"
+          check "gh CLI" "docker exec coding-agent sh -lc 'gh --version'"
+          check "tmux CLI" "docker exec coding-agent sh -lc 'tmux -V'"
+          check "tailscale CLI" "docker exec coding-agent sh -lc 'tailscale version'"
+
+          check "python scientific stack" "docker exec coding-agent python3 - <<'PY'
+          import pandas, matplotlib, seaborn, scipy
+          print('ok')
+          PY"
+          check "rust toolchain for node" "docker exec -u node coding-agent bash -c 'source ~/.cargo/env && rustc --version && cargo --version'"
+
+          check "claude config generated" "docker exec coding-agent test -f /home/node/.claude/settings.json"
+          check "codex config generated" "docker exec coding-agent test -f /home/node/.codex/config.toml"
+          check "codex wire_api responses" "docker exec coding-agent grep -q 'wire_api = \"responses\"' /home/node/.codex/config.toml"
+          check "taskmaster env generated" "docker exec coding-agent test -f /home/node/.task-master/global.env"
+          check "taskmaster provider default" "docker exec coding-agent grep -q '^TASKMASTER_MAIN_PROVIDER=anthropic$' /home/node/.task-master/global.env"
+          check "user-init executed" "docker exec coding-agent test -f /tmp/user-init-ran"
+          check "user-init log persisted" "docker exec coding-agent grep -q 'user-init-ran' /tmp/user-init-ran.log"
+          check "background skill log exists" "docker exec coding-agent test -f /var/log/entrypoint-skills.log"
+          check "host->container persistence" "echo host-\$(date +%s) > '${GITHUB_WORKSPACE}/.ci-data/projects/host-sync.txt' && docker exec coding-agent sh -lc 'cat /home/node/projects/host-sync.txt' | grep -q '^host-'"
+          check "container->host persistence" "docker exec coding-agent sh -lc 'echo container-\$(date +%s) > /home/node/projects/container-sync.txt' && grep -q '^container-' '${GITHUB_WORKSPACE}/.ci-data/projects/container-sync.txt'"
+          check "task-master help as node" "docker exec -u node coding-agent bash -c 'task-master --help >/dev/null'"
+
+          echo "SUMMARY PASS=$pass FAIL=$fail SKIP=$skip"
+          [[ "$fail" -eq 0 ]]
+
+      - name: Publish tested image to GHCR
+        if: success()
+        run: |
+          docker tag coding-agent:dev "${{ steps.tags.outputs.latest }}"
+          docker tag coding-agent:dev "${{ steps.tags.outputs.sha }}"
+          docker tag coding-agent:dev "${{ steps.tags.outputs.date }}"
+          docker push "${{ steps.tags.outputs.latest }}"
+          docker push "${{ steps.tags.outputs.sha }}"
+          docker push "${{ steps.tags.outputs.date }}"
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down -v || true
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### GHCR Build Pipeline" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Event: \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Base image: \`coding-agent:dev\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pushed tag: \`${{ steps.tags.outputs.latest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pushed tag: \`${{ steps.tags.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pushed tag: \`${{ steps.tags.outputs.date }}\`" >> "$GITHUB_STEP_SUMMARY"

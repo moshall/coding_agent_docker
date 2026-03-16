@@ -1,0 +1,69 @@
+version: "3.8"
+
+services:
+  coding-agent:
+    image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
+    container_name: ${CONTAINER_NAME:-coding-agent}
+    restart: unless-stopped
+
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATA_ROOT=${DATA_ROOT:-/data/coding-agent}
+
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - CODEX_MODEL=${CODEX_MODEL:-gpt-5-codex}
+
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - TASKMASTER_MAIN_PROVIDER=${TASKMASTER_MAIN_PROVIDER:-anthropic}
+      - TASKMASTER_MAIN_MODEL=${TASKMASTER_MAIN_MODEL:-claude-sonnet-4-20250514}
+      - TASKMASTER_RESEARCH_PROVIDER=${TASKMASTER_RESEARCH_PROVIDER}
+      - TASKMASTER_RESEARCH_MODEL=${TASKMASTER_RESEARCH_MODEL}
+      - TASKMASTER_FALLBACK_PROVIDER=${TASKMASTER_FALLBACK_PROVIDER}
+      - TASKMASTER_FALLBACK_MODEL=${TASKMASTER_FALLBACK_MODEL}
+
+      - GH_TOKEN=${GH_TOKEN}
+
+      - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TAILSCALE_HOSTNAME=${TAILSCALE_HOSTNAME:-coding-agent}
+
+    volumes:
+      - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
+      - ${DATA_ROOT:-/data/coding-agent}/config/claude:/home/node/.claude
+      - ${DATA_ROOT:-/data/coding-agent}/config/codex:/home/node/.codex
+      - ${DATA_ROOT:-/data/coding-agent}/config/gemini:/home/node/.config/gemini
+      - ${DATA_ROOT:-/data/coding-agent}/config/gemini-home:/home/node/.gemini
+      - ${DATA_ROOT:-/data/coding-agent}/config/opencode:/home/node/.config/opencode
+      - ${DATA_ROOT:-/data/coding-agent}/config/taskmaster:/home/node/.task-master
+      - ${DATA_ROOT:-/data/coding-agent}/config/gh:/home/node/.config/gh
+      - ${DATA_ROOT:-/data/coding-agent}/config/tailscale:/var/lib/tailscale
+      - ${DATA_ROOT:-/data/coding-agent}/config/cargo:/home/node/.cargo
+      - ${DATA_ROOT:-/data/coding-agent}/cron/crontabs:/var/spool/cron/crontabs
+
+      - ${DATA_ROOT:-/data/coding-agent}/projects:/home/node/projects
+
+      - ${MOUNT_OPENCLAW:-/dev/null}:/home/node/openclaw
+      - ${MOUNT_EXTRA_1:-/dev/null}:/home/node/workspace-1
+      - ${MOUNT_EXTRA_2:-/dev/null}:/home/node/workspace-2
+      - ${MOUNT_EXTRA_3:-/dev/null}:/home/node/workspace-3
+
+    ports:
+      - "${PORT_CC_CONNECT:-8080}:8080"
+      - "${PORT_RALPH:-3000}:3000"
+      - "${PORT_DEV:-9000}:9000"
+
+    cap_add:
+      - NET_ADMIN
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    stdin_open: true
+    tty: true
