@@ -119,35 +119,60 @@
 cp .env.example .env
 ```
 
-核心配置项：
+### 5.1 先看结论：哪些不填会报错？
 
-1. 基础路径与容器
-   - `DATA_ROOT`：持久化根目录（默认 `/data/coding-agent`）
-   - `CONTAINER_NAME`：容器名
-   - `TZ`：时区
+按当前 `docker-compose.yml` 与 `entrypoint.sh` 实现：
 
-2. AI 密钥
+1. **没有“必填才可启动”的硬性项**
+   - 不填多数变量时，`docker compose` 会给 warning 并注入空字符串或默认值，不会直接阻断启动。
+2. **“必填”取决于你要用的功能**
+   - 比如要用 Claude/Codex/Gemini/Task Master 某 provider，就必须填对应 API Key。
+
+### 5.2 按功能划分（推荐）
+
+1. 基础运行（有默认值，可不填）
+   - `DATA_ROOT`（默认 `/data/coding-agent`）
+   - `CONTAINER_NAME`（默认 `coding-agent`）
+   - `TZ`（默认 `Asia/Shanghai`）
+   - `NODE_ENV`（默认 `development`）
+   - `PORT_CC_CONNECT`（默认 `8080`）
+   - `PORT_RALPH`（默认 `3000`）
+   - `PORT_DEV`（默认 `9000`）
+   - `DOCKER_IMAGE`（默认 `ghcr.io/moshall/coding_agent_docker:latest`）
+   - `TASKMASTER_MAIN_PROVIDER`（默认 `anthropic`）
+   - `TASKMASTER_MAIN_MODEL`（默认 `claude-sonnet-4-20250514`）
+   - `TAILSCALE_HOSTNAME`（默认 `coding-agent`）
+   - `CODEX_MODEL`（默认 `gpt-5-codex`）
+
+2. 按功能必填（不用对应功能可留空）
    - `ANTHROPIC_API_KEY`
+     - 需要 Claude CLI，或 Task Master 主 provider/fallback/research 使用 `anthropic` 时必填。
    - `OPENAI_API_KEY`
+     - 需要 Codex CLI，或 Task Master 使用 `openai` 时必填。
    - `GEMINI_API_KEY`
-   - 可选：`OPENROUTER_API_KEY` `PERPLEXITY_API_KEY`
+     - 需要 Gemini CLI 时必填。
+   - `OPENROUTER_API_KEY`
+     - Task Master 使用 `openrouter` provider 时必填。
+   - `PERPLEXITY_API_KEY`
+     - Task Master research provider 使用 `perplexity` 时必填。
 
-3. Task Master
-   - `TASKMASTER_MAIN_PROVIDER`
-   - `TASKMASTER_MAIN_MODEL`
-   - 可选 research/fallback provider/model
+3. 完全可选（不影响基础启动）
+   - 代理与网关：`ANTHROPIC_BASE_URL` `OPENAI_BASE_URL`
+   - Task Master 研究与兜底：`TASKMASTER_RESEARCH_PROVIDER` `TASKMASTER_RESEARCH_MODEL` `TASKMASTER_FALLBACK_PROVIDER` `TASKMASTER_FALLBACK_MODEL`
+   - GitHub CLI：`GH_TOKEN`
+   - Tailscale：`TAILSCALE_AUTHKEY`
+   - 可选挂载：`MOUNT_OPENCLAW` `MOUNT_EXTRA_1` `MOUNT_EXTRA_2` `MOUNT_EXTRA_3`
 
-4. 网络
-   - `TAILSCALE_AUTHKEY`（可选）
-   - `TAILSCALE_HOSTNAME`
+### 5.3 最小可用配置示例
 
-5. 端口
-   - `PORT_CC_CONNECT`（默认 8080）
-   - `PORT_RALPH`（默认 3000）
-   - `PORT_DEV`（默认 9000）
+如果你只想先把容器跑起来并使用 Claude + Codex，最小可用可先填：
 
-6. 镜像来源
-   - `DOCKER_IMAGE=ghcr.io/moshall/coding_agent_docker:latest`
+```env
+ANTHROPIC_API_KEY=your_anthropic_key
+OPENAI_API_KEY=your_openai_key
+```
+
+其余保持 `.env.example` 默认值即可，后续按需补充。
 
 ---
 
