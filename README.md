@@ -194,7 +194,98 @@ docker compose up -d
 docker compose exec coding-agent bash
 ```
 
-### 6.3 运行后快速自检
+### 6.3 可复制编排模板（Compose）
+
+下面是可直接复制的最小编排模板（保存为 `docker-compose.template.yml`）：
+
+```yaml
+services:
+  coding-agent:
+    image: ghcr.io/moshall/coding_agent_docker:latest
+    container_name: coding-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATA_ROOT=/data/coding-agent
+      - TZ=Asia/Shanghai
+      - NODE_ENV=development
+    volumes:
+      - /data/coding-agent:/data/coding-agent
+      - /data/coding-agent/projects:/home/node/projects
+      - /data/coding-agent/config/claude:/home/node/.claude
+      - /data/coding-agent/config/codex:/home/node/.codex
+      - /data/coding-agent/config/gemini:/home/node/.config/gemini
+      - /data/coding-agent/config/taskmaster:/home/node/.task-master
+    ports:
+      - "8080:8080"
+      - "3000:3000"
+      - "9000:9000"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    stdin_open: true
+    tty: true
+```
+
+使用方式：
+
+```bash
+docker compose -f docker-compose.template.yml up -d
+docker compose -f docker-compose.template.yml exec coding-agent bash
+```
+
+### 6.4 可复制运行示例（docker run）
+
+不使用 Compose 时，可以直接运行：
+
+```bash
+docker run -d --name coding-agent \
+  --restart unless-stopped \
+  --env-file .env \
+  -e DATA_ROOT=/data/coding-agent \
+  -e TZ=Asia/Shanghai \
+  -e NODE_ENV=development \
+  -p 8080:8080 \
+  -p 3000:3000 \
+  -p 9000:9000 \
+  --cap-add NET_ADMIN \
+  --device /dev/net/tun:/dev/net/tun \
+  -v /data/coding-agent:/data/coding-agent \
+  -v /data/coding-agent/projects:/home/node/projects \
+  -v /data/coding-agent/config/claude:/home/node/.claude \
+  -v /data/coding-agent/config/codex:/home/node/.codex \
+  -v /data/coding-agent/config/gemini:/home/node/.config/gemini \
+  -v /data/coding-agent/config/taskmaster:/home/node/.task-master \
+  ghcr.io/moshall/coding_agent_docker:latest
+```
+
+进入容器：
+
+```bash
+docker exec -it coding-agent bash
+```
+
+### 6.5 可复制构建示例（本地构建镜像）
+
+如果你要基于源码在本地构建镜像，可直接复制：
+
+```bash
+git clone https://github.com/moshall/coding_agent_docker.git
+cd coding_agent_docker
+docker build --no-cache -t coding-agent:local .
+```
+
+然后用本地镜像启动：
+
+```bash
+cp .env.example .env
+echo "DOCKER_IMAGE=coding-agent:local" >> .env
+docker compose up -d
+```
+
+### 6.6 运行后快速自检
 
 ```bash
 claude --version
