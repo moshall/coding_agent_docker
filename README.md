@@ -294,6 +294,39 @@ gemini --version
 task-master --version
 ```
 
+### 6.7 使用 ccman 做快捷配置（推荐）
+
+`ccman` 已预装，可用于快速管理 Claude/Codex/Gemini/OpenCode/OpenClaw 的 provider 配置与切换。
+
+常用命令（可直接复制）：
+
+```bash
+# 进入容器
+docker compose exec coding-agent bash
+
+# Claude: 新增 provider（交互式）
+ccman cc add
+
+# Claude: 查看与切换
+ccman cc ls
+ccman cc use <provider_name>
+ccman cc current
+
+# Codex: 新增 provider（交互式）
+ccman cx add
+
+# Codex: 查看与切换
+ccman cx ls
+ccman cx use <provider_name>
+ccman cx current
+```
+
+补充说明：
+
+1. `ccman` 写入的是容器内用户配置目录，因已做卷映射，重启容器后仍会保留。
+2. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
+3. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
+
 ---
 
 ## 7. 自动构建与发布时间
