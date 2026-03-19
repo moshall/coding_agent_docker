@@ -31,9 +31,9 @@
 ### 2.1 基础运行时
 
 - `node:22-bookworm`（主运行环境）
-- `golang`（构建/运行 Go 生态工具）
 - `python3 + pip`（数据分析、脚本任务）
 - `rustup + rust stable`（首次启动按需安装，并持久化到 `DATA_ROOT/config/cargo`）
+- `golang + build-essential`（不默认预装；可在容器启动时按需安装并保持启用）
 
 ### 2.2 预装 AI CLI
 
@@ -44,7 +44,7 @@
 - `task-master-ai`：Task Master CLI
 - `ccman`：Claude Code 管理工具
 - `uipro-cli`：UI Pro 初始化工具
-- `cc-connect`：Go 二进制（多路径构建 + fallback）
+- `cc-connect`：来自 `chenhg5/cc-connect` 的 Go 二进制（多路径构建 + fallback）
 
 ### 2.3 数据与开发工具
 
@@ -60,10 +60,11 @@
 2. 启动 `cron`
 3. 启动 `tailscaled`（有 `TAILSCALE_AUTHKEY` 时自动 `tailscale up`）
 4. 自动生成缺失配置文件（Claude/Codex/Gemini/Task Master）
-5. 如有需要，为挂载的 cargo 目录初始化 Rust toolchain
-6. 后台安装 skills/extensions（不阻塞终端）
-7. 可选执行 `${DATA_ROOT}/user-init.sh`
-8. 最终切换到 `node` 用户
+5. 如有需要，按启动配置安装可选运行时包（`golang` / `build-essential`）
+6. 如有需要，为挂载的 cargo 目录初始化 Rust toolchain
+7. 后台安装 skills/extensions（不阻塞终端）
+8. 可选执行 `${DATA_ROOT}/user-init.sh`
+9. 最终切换到 `node` 用户
 
 ---
 
@@ -97,7 +98,7 @@
 
 1. **Layer 1：配置持久化（自动托管）**
    - 主机目录：`${DATA_ROOT}/config/*`
-   - 容器目录：`/home/node/.claude` `/home/node/.codex` `/home/node/.config/gemini` `/home/node/.task-master` 等
+   - 容器目录：`/home/node/.ccman` `/home/node/.claude` `/home/node/.codex` `/home/node/.config/gemini` `/home/node/.config/opencode` `/home/node/.gemini` `/home/node/.openclaw` `/home/node/.task-master` `/home/node/.cargo` `/home/node/go` `/home/node/.cache/go-build` 等
 
 2. **Layer 2：项目工作区**
    - 主机目录：`${DATA_ROOT}/projects`
@@ -109,6 +110,7 @@
 
 此外，`DATA_ROOT` 根目录本身也会映射到容器同路径，用于执行：
 - `${DATA_ROOT}/user-init.sh`（用户自定义初始化脚本）
+- `${DATA_ROOT}/config/bootstrap/*`（记录可选运行时安装意图，容器重建后仍自动启用）
 
 ---
 
@@ -136,6 +138,8 @@ cp .env.example .env
    - `CONTAINER_NAME`（默认 `coding-agent`）
    - `TZ`（默认 `Asia/Shanghai`）
    - `NODE_ENV`（默认 `development`）
+   - `INSTALL_GO_RUNTIME`（可选；启动时安装 `golang` 并持久化这个选择）
+   - `INSTALL_BUILD_ESSENTIAL`（可选；启动时安装 `build-essential` 并持久化这个选择）
    - `PORT_CC_CONNECT`（默认 `8080`）
    - `PORT_RALPH`（默认 `3000`）
    - `PORT_DEV`（默认 `9000`）
@@ -233,6 +237,13 @@ services:
       - TZ=Asia/Shanghai
       # 运行环境标记，默认开发态
       - NODE_ENV=development
+      # Go 相关用户目录，配合下面的卷映射保留模块与构建缓存
+      - GOPATH=/home/node/go
+      - GOCACHE=/home/node/.cache/go-build
+      # 可选：启动时安装 Go toolchain，并把这个选择持久化到 DATA_ROOT/config/bootstrap
+      - INSTALL_GO_RUNTIME=
+      # 可选：启动时安装 build-essential，并把这个选择持久化到 DATA_ROOT/config/bootstrap
+      - INSTALL_BUILD_ESSENTIAL=
 
     # 卷映射：把配置和项目持久化到宿主机
     volumes:
@@ -244,12 +255,24 @@ services:
       - /data/coding-agent/config/claude:/home/node/.claude
       # Codex 配置与登录态
       - /data/coding-agent/config/codex:/home/node/.codex
+      # ccman 的 provider 列表与切换记录
+      - /data/coding-agent/config/ccman:/home/node/.ccman
       # Gemini CLI 配置
       - /data/coding-agent/config/gemini:/home/node/.config/gemini
+      # Gemini 家目录（部分工具按 HOME 路径读取）
+      - /data/coding-agent/config/gemini-home:/home/node/.gemini
+      # OpenCode 配置
+      - /data/coding-agent/config/opencode:/home/node/.config/opencode
+      # OpenClaw 家目录（ccman 可管理）
+      - /data/coding-agent/config/openclaw-home:/home/node/.openclaw
       # Task Master 配置与任务数据
       - /data/coding-agent/config/taskmaster:/home/node/.task-master
       # Rust/Cargo 工具链缓存与用户 cargo 目录
       - /data/coding-agent/config/cargo:/home/node/.cargo
+      # Go 工作目录（GOPATH）
+      - /data/coding-agent/config/go:/home/node/go
+      # Go 构建缓存（GOCACHE）
+      - /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build
 
     # 端口映射：按需保留；不需要对外暴露时可以删除对应项
     ports:
@@ -304,6 +327,8 @@ docker run -d --name coding-agent \
   -e DATA_ROOT=/data/coding-agent \
   -e TZ=Asia/Shanghai \
   -e NODE_ENV=development \
+  -e GOPATH=/home/node/go \
+  -e GOCACHE=/home/node/.cache/go-build \
   -p 8080:8080 \
   -p 3000:3000 \
   -p 9000:9000 \
@@ -313,9 +338,15 @@ docker run -d --name coding-agent \
   -v /data/coding-agent/projects:/home/node/projects \
   -v /data/coding-agent/config/claude:/home/node/.claude \
   -v /data/coding-agent/config/codex:/home/node/.codex \
+  -v /data/coding-agent/config/ccman:/home/node/.ccman \
   -v /data/coding-agent/config/gemini:/home/node/.config/gemini \
+  -v /data/coding-agent/config/gemini-home:/home/node/.gemini \
+  -v /data/coding-agent/config/opencode:/home/node/.config/opencode \
+  -v /data/coding-agent/config/openclaw-home:/home/node/.openclaw \
   -v /data/coding-agent/config/taskmaster:/home/node/.task-master \
   -v /data/coding-agent/config/cargo:/home/node/.cargo \
+  -v /data/coding-agent/config/go:/home/node/go \
+  -v /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build \
   ghcr.io/moshall/coding_agent_docker:latest
 ```
 
@@ -354,16 +385,24 @@ task-master --version
 
 ### 6.7 使用 ccman 做快捷配置（推荐）
 
-`ccman` 已预装，可用于快速管理 Claude/Codex/Gemini/OpenCode/OpenClaw 的 provider 配置与切换。
+`ccman` 已预装，并且镜像内做了包装优化：
+
+1. 即使你从 `root` shell 里执行 `ccman`，也会自动切换为 `node` 用户执行。
+2. 会自动强制 `NODE_ENV=production`，避免落到 `/tmp/ccman-dev`。
+3. `ccman` 自身配置会持久化到 `${DATA_ROOT}/config/ccman`。
+4. 通过 `ccman` 写入的 Claude/Codex/Gemini/OpenCode/OpenClaw 配置，也会落到各自持久化目录。
 
 常用命令（可直接复制）：
 
 ```bash
-# 推荐：以 node 用户进入，并显式关闭 ccman 的开发模式目录
-docker compose exec --user node -e NODE_ENV=production coding-agent bash
+# 直接进入 ccman 交互界面
+docker compose exec coding-agent ccman
+
+# 或者进入容器 shell；即使这里是 root，后续执行 ccman 也会自动切到 node + production
+docker compose exec coding-agent bash
 
 # 或者使用 docker exec
-docker exec -it --user node -e NODE_ENV=production coding-agent bash
+docker exec -it coding-agent ccman
 
 # Claude: 新增 provider（交互式）
 ccman cc add
@@ -384,13 +423,12 @@ ccman cx current
 
 补充说明：
 
-1. `ccman` 应该在 `node` 用户下运行。若以 `root` 运行，通常会把配置写到 `/root/...`，而不是镜像主路径 `/home/node/...`。
-2. `ccman` 在 `NODE_ENV=development` 时会切换到开发模式目录，例如 `/tmp/ccman-dev/.ccman`、`/tmp/ccman-dev/.codex`、`/tmp/ccman-dev/.claude`。这些目录不属于本镜像的持久化卷映射。
-3. 因此，使用 `ccman` 时建议显式指定 `NODE_ENV=production`，让它写入 `/home/node/.ccman`、`/home/node/.codex`、`/home/node/.claude`。
-4. 写入 `/tmp/ccman-dev` 的授权和配置，不属于预期持久化数据。即使同一个容器仅停止再启动时可能暂时还在，只要容器被重建、替换或清理临时目录，就可能丢失。
-5. 如果以 `root` 运行 `ccman`，还可能写出 `0600` 的 root-only 文件，导致后续 `node` 用户无法读取 Claude Code 或 Codex 配置。
-6. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
-7. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
+1. `ccman` 命令已强制使用 `node` 用户和 `/home/node` 作为 HOME，因此可以直接在默认容器环境下运行，不再要求你手工加 `--user node` 或 `-e NODE_ENV=production`。
+2. 为了避免 ccman 开发模式目录带来的丢失风险，包装脚本会固定 `NODE_ENV=production`，从而把配置写到 `/home/node/.ccman`、`/home/node/.claude`、`/home/node/.codex`、`/home/node/.gemini`、`/home/node/.config/opencode`、`/home/node/.openclaw`。
+3. 这些目录都已映射到 `${DATA_ROOT}/config/*` 下，因此容器重建后配置仍然存在。
+4. 普通 shell 操作依旧建议使用 `node` 用户进入；这次优化只针对 `ccman` 做了“自动切到 node”的兜底。
+5. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
+6. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
 
 ---
 
@@ -457,7 +495,7 @@ docker pull ghcr.io/moshall/coding_agent_docker:latest
    - 某些 CI runner 不具备该能力，需跳过或降级检查
 
 4. **首次启动耗时**
-   - 首次会进行配置生成、skill 初始化，以及按需 Rust toolchain 安装
+   - 首次会进行配置生成、skill 初始化，以及按需 Rust / Go / build-essential 安装
    - 后续因持久化会明显更快
 
 5. **可选挂载默认是 /dev/null 占位**

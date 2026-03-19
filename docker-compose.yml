@@ -10,6 +10,10 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       - NODE_ENV=${NODE_ENV:-development}
       - DATA_ROOT=${DATA_ROOT:-/data/coding-agent}
+      - GOPATH=/home/node/go
+      - GOCACHE=/home/node/.cache/go-build
+      - INSTALL_GO_RUNTIME=${INSTALL_GO_RUNTIME:-}
+      - INSTALL_BUILD_ESSENTIAL=${INSTALL_BUILD_ESSENTIAL:-}
 
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
@@ -38,13 +42,17 @@ services:
       - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
       - ${DATA_ROOT:-/data/coding-agent}/config/claude:/home/node/.claude
       - ${DATA_ROOT:-/data/coding-agent}/config/codex:/home/node/.codex
+      - ${DATA_ROOT:-/data/coding-agent}/config/ccman:/home/node/.ccman
       - ${DATA_ROOT:-/data/coding-agent}/config/gemini:/home/node/.config/gemini
       - ${DATA_ROOT:-/data/coding-agent}/config/gemini-home:/home/node/.gemini
       - ${DATA_ROOT:-/data/coding-agent}/config/opencode:/home/node/.config/opencode
+      - ${DATA_ROOT:-/data/coding-agent}/config/openclaw-home:/home/node/.openclaw
       - ${DATA_ROOT:-/data/coding-agent}/config/taskmaster:/home/node/.task-master
       - ${DATA_ROOT:-/data/coding-agent}/config/gh:/home/node/.config/gh
       - ${DATA_ROOT:-/data/coding-agent}/config/tailscale:/var/lib/tailscale
       - ${DATA_ROOT:-/data/coding-agent}/config/cargo:/home/node/.cargo
+      - ${DATA_ROOT:-/data/coding-agent}/config/go:/home/node/go
+      - ${DATA_ROOT:-/data/coding-agent}/config/go-build-cache:/home/node/.cache/go-build
       - ${DATA_ROOT:-/data/coding-agent}/cron/crontabs:/var/spool/cron/crontabs
 
       - ${DATA_ROOT:-/data/coding-agent}/projects:/home/node/projects

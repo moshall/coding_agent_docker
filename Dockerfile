@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.22-bookworm AS go-builder
+FROM golang:1.25-bookworm AS go-builder
 
-ARG CC_CONNECT_REPO=https://github.com/openclaw/cc-connect.git
+ARG CC_CONNECT_REPO=https://github.com/chenhg5/cc-connect.git
 WORKDIR /build
 
 RUN set -eux; \
@@ -12,12 +12,15 @@ RUN set -eux; \
 
 RUN set -eux; \
     fallback_build() { \
+      tmpdir="$(mktemp -d)"; \
+      cd "${tmpdir}"; \
       printf '%s\n' \
         'package main' \
         'import "fmt"' \
         'func main() { fmt.Println("cc-connect fallback build") }' \
-        >/tmp/cc-connect-main.go; \
-      go build -ldflags='-w -s' -o /build/cc-connect /tmp/cc-connect-main.go; \
+        >cc-connect-main.go; \
+      GO111MODULE=off GOTOOLCHAIN=local go build -ldflags='-w -s' -o /build/cc-connect ./cc-connect-main.go; \
+      rm -rf "${tmpdir}"; \
     }; \
     if git ls-remote "${CC_CONNECT_REPO}" >/dev/null 2>&1; then \
       git clone --depth 1 "${CC_CONNECT_REPO}" /tmp/cc-connect; \
@@ -41,14 +44,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      build-essential \
       ca-certificates \
       cron \
       curl \
       git \
       gnupg \
       gosu \
-      golang \
       lsb-release \
       python3 \
       python3-pip \
@@ -97,17 +98,18 @@ RUN set -eux; \
     install_global uipro-cli; \
     install_global ralph-orchestrator 1
 
-RUN set -eux; \
-    su - node -c "git clone --depth 1 https://github.com/obra/superpowers /home/node/.superpowers || true"; \
-    su - node -c "git clone --depth 1 https://github.com/openclaw/skills /home/node/.openclaw-skills || true"
-
 ENV PATH="/home/node/.cargo/bin:${PATH}"
 
 COPY --from=go-builder /build/cc-connect /usr/local/bin/cc-connect
+COPY ccman-wrapper.sh /tmp/ccman-wrapper.sh
 COPY entrypoint.sh /entrypoint.sh
 COPY user-init.sh.example /home/node/user-init.sh.example
 
-RUN chmod +x /entrypoint.sh /home/node/user-init.sh.example && \
+RUN set -eux; \
+    mv /usr/local/bin/ccman /usr/local/bin/ccman-real; \
+    install -m 0755 /tmp/ccman-wrapper.sh /usr/local/bin/ccman; \
+    rm -f /tmp/ccman-wrapper.sh; \
+    chmod +x /entrypoint.sh /home/node/user-init.sh.example && \
     chown node:node /home/node/user-init.sh.example
 
 WORKDIR /home/node

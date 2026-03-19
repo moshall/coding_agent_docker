@@ -15,7 +15,7 @@ assert_file_exists README.md "README.md exists"
 assert_file_exists .github/workflows/build-push.yml "GitHub workflow exists"
 
 echo "[TC-SMOKE] Key content"
-assert_contains Dockerfile "FROM golang:1.22-bookworm AS go-builder" "Dockerfile has Go builder stage"
+assert_contains Dockerfile "FROM golang:1.25-bookworm AS go-builder" "Dockerfile has Go builder stage"
 assert_contains Dockerfile "FROM node:22-bookworm" "Dockerfile has Node runtime stage"
 assert_contains entrypoint.sh 'exec gosu node "$@"' "Entrypoint switches to node user"
 assert_contains docker-compose.yml "NET_ADMIN" "Compose includes NET_ADMIN capability"

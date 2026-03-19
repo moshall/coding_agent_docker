@@ -8,9 +8,23 @@ if [[ "$(id -u)" != "0" ]]; then
 fi
 
 DATA_ROOT="${DATA_ROOT:-/data/coding-agent}"
+BOOTSTRAP_ROOT="${DATA_ROOT}/config/bootstrap"
+GO_MARKER="${BOOTSTRAP_ROOT}/install-go-runtime"
+BUILD_ESSENTIAL_MARKER="${BOOTSTRAP_ROOT}/install-build-essential"
 
 log() {
   echo "[entrypoint] $*"
+}
+
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 safe_start_cron() {
@@ -47,6 +61,20 @@ run_with_timeout_as_node() {
   fi
 }
 
+sync_repo_as_node() {
+  local url="$1"
+  local dest="$2"
+  local label="$3"
+  local seconds="${4:-180}"
+
+  if [[ -d "${dest}/.git" ]]; then
+    return
+  fi
+
+  log "syncing ${label} repo..."
+  run_with_timeout_as_node "${seconds}" "tmp='${dest}.tmp'; rm -rf \"\${tmp}\"; git clone --depth 1 '${url}' \"\${tmp}\" && rm -rf '${dest}' && mv \"\${tmp}\" '${dest}'"
+}
+
 ensure_rust_toolchain() {
   if [[ -x /home/node/.cargo/bin/rustc ]] && [[ -f /home/node/.cargo/env ]]; then
     return
@@ -56,16 +84,60 @@ ensure_rust_toolchain() {
   run_with_timeout_as_node 240 "curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"
 }
 
+ensure_runtime_packages() {
+  local install_go=0
+  local install_build=0
+
+  mkdir -p "${BOOTSTRAP_ROOT}"
+
+  if [[ -f "${GO_MARKER}" ]] || is_truthy "${INSTALL_GO_RUNTIME:-}"; then
+    install_go=1
+    : >"${GO_MARKER}"
+  fi
+
+  if [[ -f "${BUILD_ESSENTIAL_MARKER}" ]] || is_truthy "${INSTALL_BUILD_ESSENTIAL:-}"; then
+    install_build=1
+    : >"${BUILD_ESSENTIAL_MARKER}"
+  fi
+
+  if [[ "${install_go}" -eq 0 && "${install_build}" -eq 0 ]]; then
+    return
+  fi
+
+  local -a packages=()
+
+  if [[ "${install_go}" -eq 1 ]] && ! command -v go >/dev/null 2>&1; then
+    packages+=(golang)
+  fi
+
+  if [[ "${install_build}" -eq 1 ]] && ! dpkg-query -W -f='${Status}' build-essential 2>/dev/null | grep -q "install ok installed"; then
+    packages+=(build-essential)
+  fi
+
+  if [[ "${#packages[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  log "installing optional runtime packages: ${packages[*]}"
+  apt-get update
+  apt-get install -y --no-install-recommends "${packages[@]}"
+  rm -rf /var/lib/apt/lists/*
+}
+
 mkdir -p \
+  /home/node/.ccman \
   /home/node/.claude \
   /home/node/.codex \
   /home/node/.gemini \
   /home/node/.config/gemini \
   /home/node/.config/opencode \
+  /home/node/.openclaw \
   /home/node/.task-master \
   /home/node/.config/gh \
   /var/lib/tailscale \
   /home/node/.cargo \
+  /home/node/go \
+  /home/node/.cache/go-build \
   /var/spool/cron/crontabs \
   /home/node/projects
 
@@ -80,12 +152,16 @@ done
 
 # Keep ownership fixes targeted to startup-critical paths.
 for owned_dir in \
+  /home/node/.ccman \
   /home/node/.claude \
   /home/node/.codex \
   /home/node/.gemini \
   /home/node/.config \
+  /home/node/.openclaw \
   /home/node/.task-master \
   /home/node/.cargo \
+  /home/node/go \
+  /home/node/.cache \
   /var/spool/cron/crontabs; do
   if [[ -e "${owned_dir}" ]]; then
     chown -R node:node "${owned_dir}" || true
@@ -102,6 +178,7 @@ done
 log "starting cron..."
 safe_start_cron
 maybe_start_tailscale
+ensure_runtime_packages
 ensure_rust_toolchain
 
 CLAUDE_SETTINGS="/home/node/.claude/settings.json"
@@ -157,6 +234,17 @@ EOF2
   log "generated: ${GEMINI_CONFIG}"
 fi
 
+GEMINI_PROJECT_REGISTRY="/home/node/.gemini/projects.json"
+if [[ ! -f "${GEMINI_PROJECT_REGISTRY}" ]]; then
+  cat >"${GEMINI_PROJECT_REGISTRY}" <<EOF2
+{
+  "projects": {}
+}
+EOF2
+  chown node:node "${GEMINI_PROJECT_REGISTRY}"
+  log "seeded: ${GEMINI_PROJECT_REGISTRY}"
+fi
+
 TASKMASTER_ENV="/home/node/.task-master/global.env"
 if [[ ! -f "${TASKMASTER_ENV}" ]]; then
   mkdir -p "$(dirname "${TASKMASTER_ENV}")"
@@ -178,6 +266,9 @@ if [[ ! -f "${TASKMASTER_ENV}" ]]; then
 fi
 
 install_skills_and_extensions() {
+  sync_repo_as_node "https://github.com/obra/superpowers" "/home/node/.superpowers" "superpowers"
+  sync_repo_as_node "https://github.com/openclaw/skills" "/home/node/.openclaw-skills" "openclaw skills" 240
+
   if [[ ! -d "/home/node/.claude/skills/planning-with-files" ]]; then
     log "installing planning-with-files skill..."
     run_with_timeout_as_node 180 "npx -y skills add OthmanAdi/planning-with-files --all -y"
