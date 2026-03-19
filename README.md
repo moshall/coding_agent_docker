@@ -191,7 +191,17 @@ cp .env.example .env
 # 编辑 .env 填入你的密钥
 
 docker compose up -d
-docker compose exec coding-agent bash
+docker compose exec --user node -e NODE_ENV=production coding-agent bash
+```
+
+补充说明：
+
+1. 镜像运行时主进程会切换到 `node` 用户，但镜像默认配置用户仍是 `root`。
+2. 因此手动进入容器时，建议显式指定 `--user node`，避免把配置写到错误目录或写出 root-only 权限文件。
+3. 如需使用 `docker exec`，推荐命令是：
+
+```bash
+docker exec -it --user node -e NODE_ENV=production coding-agent bash
 ```
 
 ### 6.3 可复制编排模板（Compose）
@@ -277,7 +287,7 @@ services:
 
 ```bash
 docker compose -f docker-compose.template.yml up -d
-docker compose -f docker-compose.template.yml exec coding-agent bash
+docker compose -f docker-compose.template.yml exec --user node -e NODE_ENV=production coding-agent bash
 ```
 
 ### 6.4 可复制运行示例（docker run）
@@ -308,7 +318,7 @@ docker run -d --name coding-agent \
 进入容器：
 
 ```bash
-docker exec -it coding-agent bash
+docker exec -it --user node -e NODE_ENV=production coding-agent bash
 ```
 
 ### 6.5 可复制构建示例（本地构建镜像）
@@ -345,8 +355,11 @@ task-master --version
 常用命令（可直接复制）：
 
 ```bash
-# 进入容器
-docker compose exec coding-agent bash
+# 推荐：以 node 用户进入，并显式关闭 ccman 的开发模式目录
+docker compose exec --user node -e NODE_ENV=production coding-agent bash
+
+# 或者使用 docker exec
+docker exec -it --user node -e NODE_ENV=production coding-agent bash
 
 # Claude: 新增 provider（交互式）
 ccman cc add
@@ -367,9 +380,13 @@ ccman cx current
 
 补充说明：
 
-1. `ccman` 写入的是容器内用户配置目录，因已做卷映射，重启容器后仍会保留。
-2. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
-3. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
+1. `ccman` 应该在 `node` 用户下运行。若以 `root` 运行，通常会把配置写到 `/root/...`，而不是镜像主路径 `/home/node/...`。
+2. `ccman` 在 `NODE_ENV=development` 时会切换到开发模式目录，例如 `/tmp/ccman-dev/.ccman`、`/tmp/ccman-dev/.codex`、`/tmp/ccman-dev/.claude`。这些目录不属于本镜像的持久化卷映射。
+3. 因此，使用 `ccman` 时建议显式指定 `NODE_ENV=production`，让它写入 `/home/node/.ccman`、`/home/node/.codex`、`/home/node/.claude`。
+4. 写入 `/tmp/ccman-dev` 的授权和配置，不属于预期持久化数据。即使同一个容器仅停止再启动时可能暂时还在，只要容器被重建、替换或清理临时目录，就可能丢失。
+5. 如果以 `root` 运行 `ccman`，还可能写出 `0600` 的 root-only 文件，导致后续 `node` 用户无法读取 Claude Code 或 Codex 配置。
+6. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
+7. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
 
 ---
 
