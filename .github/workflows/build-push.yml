@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - v*
   # 07:00 Asia/Shanghai == 23:00 UTC (previous day)
   schedule:
     - cron: "0 23 * * *"
@@ -41,9 +43,25 @@ jobs:
         run: |
           short_sha="${GITHUB_SHA::12}"
           date_tag="$(date -u +%Y%m%d)"
-          echo "latest=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          build_version="sha-${short_sha}"
+          latest_tag=""
+          version_tag=""
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            build_version="${GITHUB_REF_NAME}"
+            version_tag="${IMAGE}:${GITHUB_REF_NAME}"
+          else
+            latest_tag="${IMAGE}:latest"
+          fi
+
+          echo "latest=${latest_tag}" >> "$GITHUB_OUTPUT"
           echo "sha=${IMAGE}:sha-${short_sha}" >> "$GITHUB_OUTPUT"
           echo "date=${IMAGE}:date-${date_tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version_tag}" >> "$GITHUB_OUTPUT"
+          echo "build_version=${build_version}" >> "$GITHUB_OUTPUT"
+          echo "build_date=${build_date}" >> "$GITHUB_OUTPUT"
+          echo "vcs_ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -72,6 +90,9 @@ jobs:
           MOUNT_EXTRA_2=
           MOUNT_EXTRA_3=
           DOCKER_IMAGE=coding-agent:dev
+          BUILD_VERSION=${{ steps.tags.outputs.build_version }}
+          BUILD_DATE=${{ steps.tags.outputs.build_date }}
+          VCS_REF=${{ steps.tags.outputs.vcs_ref }}
           EOF
 
           rm -rf "${GITHUB_WORKSPACE}/.ci-data"
@@ -192,12 +213,18 @@ jobs:
       - name: Publish tested image to GHCR
         if: success()
         run: |
-          docker tag coding-agent:dev "${{ steps.tags.outputs.latest }}"
+          if [[ -n "${{ steps.tags.outputs.latest }}" ]]; then
+            docker tag coding-agent:dev "${{ steps.tags.outputs.latest }}"
+            docker push "${{ steps.tags.outputs.latest }}"
+          fi
           docker tag coding-agent:dev "${{ steps.tags.outputs.sha }}"
           docker tag coding-agent:dev "${{ steps.tags.outputs.date }}"
-          docker push "${{ steps.tags.outputs.latest }}"
           docker push "${{ steps.tags.outputs.sha }}"
           docker push "${{ steps.tags.outputs.date }}"
+          if [[ -n "${{ steps.tags.outputs.version }}" ]]; then
+            docker tag coding-agent:dev "${{ steps.tags.outputs.version }}"
+            docker push "${{ steps.tags.outputs.version }}"
+          fi
 
       - name: Teardown
         if: always()
@@ -209,6 +236,11 @@ jobs:
           echo "### GHCR Build Pipeline" >> "$GITHUB_STEP_SUMMARY"
           echo "- Event: \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Base image: \`coding-agent:dev\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Pushed tag: \`${{ steps.tags.outputs.latest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ steps.tags.outputs.latest }}" ]]; then
+            echo "- Pushed tag: \`${{ steps.tags.outputs.latest }}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- Pushed tag: \`${{ steps.tags.outputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Pushed tag: \`${{ steps.tags.outputs.date }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -n "${{ steps.tags.outputs.version }}" ]]; then
+            echo "- Pushed tag: \`${{ steps.tags.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -9,6 +9,7 @@ scripts=(
   tests/tc-tool.sh
   tests/tc-ccman.sh
   tests/tc-gemini.sh
+  tests/tc-versioning.sh
   tests/tc-persist.sh
   tests/tc-mount.sh
   tests/tc-userinit.sh

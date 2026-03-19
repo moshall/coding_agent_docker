@@ -454,6 +454,21 @@ ccman cx current
 - `latest`
 - `sha-<12位提交哈希>`
 - `date-YYYYMMDD`
+- `vX.Y.Z`（仅当 push 的是版本 tag，例如 `v1.0.0`）
+
+版本策略说明：
+
+1. Git tag / GitHub Release 版本，和镜像版本是两层概念，但现在这两层已经打通。
+2. 当工作流由 `main` 分支 push 触发时，会继续发布：
+   - `latest`
+   - `sha-*`
+   - `date-*`
+3. 当工作流由 `vX.Y.Z` tag push 触发时，会额外发布同名镜像 tag：
+   - `ghcr.io/moshall/coding_agent_docker:vX.Y.Z`
+4. 镜像内部也会写入版本元数据：
+   - OCI Label：`org.opencontainers.image.version`
+   - 运行时环境变量：`CODING_AGENT_VERSION`
+5. 因此，即使项目没有单独的 `coding-agent --version` 命令，仍然可以明确区分每个发布版本。
 
 ### 7.1 构建耗时说明
 
@@ -476,6 +491,12 @@ ccman cx current
 
 ```bash
 docker pull ghcr.io/moshall/coding_agent_docker:latest
+```
+
+如果你希望固定到某个正式发布版本，可以直接拉取版本 tag：
+
+```bash
+docker pull ghcr.io/moshall/coding_agent_docker:vX.Y.Z
 ```
 
 ---
@@ -503,7 +524,12 @@ docker pull ghcr.io/moshall/coding_agent_docker:latest
 
 6. **镜像默认目标**
    - `docker-compose.yml` 默认拉取 GHCR 的 `latest`
-   - 如需固定版本，建议改为 `sha-*` 或 `date-*` 标签
+   - 如需固定版本，建议改为 `vX.Y.Z`、`sha-*` 或 `date-*` 标签
+
+7. **如何查看镜像版本**
+   - 容器内可执行：`echo $CODING_AGENT_VERSION`
+   - 宿主机可执行：
+     `docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' ghcr.io/moshall/coding_agent_docker:latest`
 
 ---
 

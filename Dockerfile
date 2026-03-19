@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+ARG BUILD_VERSION=dev
+ARG BUILD_DATE=unknown
+ARG VCS_REF=unknown
+
 FROM golang:1.25-bookworm AS go-builder
 
 ARG CC_CONNECT_REPO=https://github.com/chenhg5/cc-connect.git
@@ -37,9 +41,22 @@ RUN set -eux; \
 
 FROM node:22-bookworm
 
+ARG BUILD_VERSION=dev
+ARG BUILD_DATE=unknown
+ARG VCS_REF=unknown
+
 USER root
 
-ENV DEBIAN_FRONTEND=noninteractive
+LABEL org.opencontainers.image.title="coding_agent_docker" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="https://github.com/moshall/coding_agent_docker"
+
+ENV CODING_AGENT_VERSION="${BUILD_VERSION}" \
+    CODING_AGENT_BUILD_DATE="${BUILD_DATE}" \
+    CODING_AGENT_VCS_REF="${VCS_REF}" \
+    DEBIAN_FRONTEND=noninteractive
 
 RUN set -eux; \
     apt-get update; \
