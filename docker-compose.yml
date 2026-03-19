@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   coding-agent:
     image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
@@ -50,7 +48,6 @@ services:
       - ${DATA_ROOT:-/data/coding-agent}/config/taskmaster:/home/node/.task-master
       - ${DATA_ROOT:-/data/coding-agent}/config/gh:/home/node/.config/gh
       - ${DATA_ROOT:-/data/coding-agent}/config/tailscale:/var/lib/tailscale
-      - ${DATA_ROOT:-/data/coding-agent}/config/cargo:/home/node/.cargo
       - ${DATA_ROOT:-/data/coding-agent}/config/go:/home/node/go
       - ${DATA_ROOT:-/data/coding-agent}/config/go-build-cache:/home/node/.cache/go-build
       - ${DATA_ROOT:-/data/coding-agent}/cron/crontabs:/var/spool/cron/crontabs

@@ -1,253 +1,259 @@
 # coding_agent_docker
 
-一套可直接落地的 Coding Agent Docker 运行环境，内置多种 AI CLI、数据分析工具链与自动初始化流程，并通过 **GHCR + GitHub Actions** 做持续构建发布。
+[![Build](https://github.com/moshall/coding_agent_docker/actions/workflows/build-push.yml/badge.svg)](https://github.com/moshall/coding_agent_docker/actions/workflows/build-push.yml)
+[![Release](https://img.shields.io/github/v/release/moshall/coding_agent_docker?sort=semver)](https://github.com/moshall/coding_agent_docker/releases)
+[![License](https://img.shields.io/github/license/moshall/coding_agent_docker)](./LICENSE)
 
-- 公开镜像地址：`ghcr.io/moshall/coding_agent_docker`
-- 推荐标签：`latest`
-- 自动构建时间：**每日北京时间 07:00**（GitHub cron: `0 23 * * *`）
+一个面向远程开发、VPS 常驻、1Panel 部署和团队统一环境的 AI Coding Agent Docker 镜像。
+它把常用 AI CLI、数据分析工具、配置持久化和启动自举流程整合到一个可直接运行的容器里，并通过 GHCR + GitHub Actions 持续构建发布。
 
----
+- 公开镜像：`ghcr.io/moshall/coding_agent_docker`
+- 推荐标签：`latest`、`vX.Y.Z`、`sha-<commit>`、`date-YYYYMMDD`
+- 自动构建时间：每日北京时间 `07:00`
+- 默认运行形态：通用 CLI 工作容器，不强绑定单一 Web 服务
+- 项目状态：持续维护，支持 GHCR 公共拉取、每日自动构建与版本标签发布
 
-## 1. 项目定位与应用场景
+## Table of Contents
 
-这个镜像适合以下场景：
+- [Why This Image](#why-this-image)
+- [Use Cases](#use-cases)
+- [What Is Included](#what-is-included)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Persistence Model](#persistence-model)
+- [Deployment Examples](#deployment-examples)
+- [Common Operations](#common-operations)
+- [Build and Release](#build-and-release)
+- [Troubleshooting](#troubleshooting)
+- [Related Docs](#related-docs)
+- [Support](#support)
+- [License](#license)
 
-1. **个人开发工作台容器化**
-   在任意 Linux 主机快速拉起统一的 AI 开发环境，避免本机反复安装 CLI。
+## Why This Image
 
-2. **团队共享一致环境**
-   团队成员使用同一镜像，降低“你本地能跑、我本地不行”的环境偏差。
+这个项目对齐 GitHub README 的常见写法：先回答“它是什么、适合谁、如何上手”，再展开配置、持久化、运维和发布细节。
 
-3. **远程 VPS / 云主机开发**
-   在远程服务器中长期运行，结合 `tmux`、`cron`、持久化目录做稳定工作流。
+它的核心目标是：
 
-4. **CI/CD 验证镜像能力**
-   每日自动构建并跑回归检查，保证镜像持续可用。
+- 用一个镜像统一 Claude Code、Codex、Gemini CLI、Task Master、OpenCode 等工具的运行环境。
+- 让配置、授权和项目目录持久化，避免容器重建后从头再配。
+- 兼容 VPS、原生 Docker、1Panel、GitHub Actions 等常见使用方式。
+- 把“可拉取、可启动、可进入、可配置、可回归”的链路做成稳定的发布流程。
 
----
+## Use Cases
 
-## 2. 镜像内容与作用
+适合以下场景：
 
-### 2.1 基础运行时
+- 个人在 Linux 主机或云服务器上搭建长期可复用的 AI 开发工作台。
+- 团队共享同一套 CLI 和初始化逻辑，降低环境漂移。
+- 在 1Panel 或类似面板中快速部署一个长期运行的 Coding Agent 容器。
+- 作为基础镜像或开发底座，为后续项目脚本、自动化任务或编排系统提供统一环境。
 
-- `node:22-bookworm`（主运行环境）
-- `python3 + pip`（数据分析、脚本任务）
-- `rustup + rust stable`（首次启动按需安装，并持久化到 `DATA_ROOT/config/cargo`）
-- `golang + build-essential`（不默认预装；可在容器启动时按需安装并保持启用）
+## What Is Included
 
-### 2.2 预装 AI CLI
+### Preinstalled Tools
 
-- `@anthropic-ai/claude-code`：Claude Code CLI
-- `@openai/codex`：Codex CLI
-- `@google/gemini-cli`：Gemini CLI
-- `opencode-ai`：OpenCode CLI
-- `task-master-ai`：Task Master CLI
-- `ccman`：Claude Code 管理工具
-- `uipro-cli`：UI Pro 初始化工具
-- `cc-connect`：来自 `chenhg5/cc-connect` 的 Go 二进制（多路径构建 + fallback）
+| 类别 | 内容 | 说明 |
+| --- | --- | --- |
+| AI CLI | `claude-code`、`codex`、`gemini-cli`、`opencode`、`task-master` | 镜像内预装 |
+| 配置工具 | `ccman` | 已做包装，自动以 `node` 用户 + `NODE_ENV=production` 运行 |
+| 连接/桥接 | `cc-connect` | 构建阶段编译真实二进制，并在 CI 中校验 |
+| 开发运维 | `git`、`gh`、`tmux`、`cron`、`curl`、`wget` | 便于长期驻留和日常操作 |
+| Python 工具链 | `python3`、`pip`、`uv`、`pandas`、`matplotlib`、`seaborn`、`scipy` | 适合数据处理与脚本任务 |
+| 网络 | `tailscale`、`tailscaled` | 可选启用，需要 `NET_ADMIN` 和 `/dev/net/tun` |
 
-### 2.3 数据与开发工具
+### Runtime Bootstrap
 
-- Python 科学栈：`pandas` `matplotlib` `seaborn` `scipy`
-- 命令行/运维：`gh` `tmux` `cron` `git` `curl` `wget`
-- 网络组件：`tailscale`（含 `tailscaled`）
+容器启动时会自动做这些事：
 
-### 2.4 启动逻辑（entrypoint）
+- 初始化配置目录与权限。
+- 启动 `cron`。
+- 启动 `tailscaled`，有 `TAILSCALE_AUTHKEY` 时自动执行 `tailscale up`。
+- 根据环境变量生成 Claude、Codex、Gemini、Task Master 的基础配置。
+- 为 Gemini 预置项目注册表，避免首次运行时的 registry 报错。
+- 按需安装 `golang` 和 `build-essential`，并把这个选择持久化。
+- 后台安装 skills/extensions，不阻塞主终端。
+- 如存在 `${DATA_ROOT}/user-init.sh`，则在启动时执行。
+- 最终把主进程切换为 `node` 用户。
 
-容器启动时会自动完成：
+### Bundled Skills and Extensions
 
-1. 初始化配置目录与权限
-2. 启动 `cron`
-3. 启动 `tailscaled`（有 `TAILSCALE_AUTHKEY` 时自动 `tailscale up`）
-4. 自动生成缺失配置文件（Claude/Codex/Gemini/Task Master）
-5. 如有需要，按启动配置安装可选运行时包（`golang` / `build-essential`）
-6. 如有需要，为挂载的 cargo 目录初始化 Rust toolchain
-7. 后台安装 skills/extensions（不阻塞终端）
-8. 可选执行 `${DATA_ROOT}/user-init.sh`
-9. 最终切换到 `node` 用户
+镜像会按幂等方式初始化以下内容：
 
----
+- `planning-with-files`
+- `data-analyst`
+- `oil-oil/codex`
+- `uipro init --offline` 相关扩展初始化
 
-## 3. 预装 Skill 信息
+说明：这部分在后台执行，日志位于 `/var/log/entrypoint-skills.log`。
 
-启动后会按“缺失才安装”的策略处理以下技能（幂等）：
+## Quick Start
 
-1. `planning-with-files`
-   - 来源：`OthmanAdi/planning-with-files`
-   - 作用：复杂任务拆分、计划文件化管理
-
-2. `data-analyst`
-   - 来源：镜像内 `/home/node/.openclaw-skills/data-analyst`
-   - 作用：数据分析辅助能力（复制到 `.claude/skills` 与 `.codex/skills`）
-
-3. `oil-oil/codex`
-   - 来源：`oil-oil/codex`
-   - 作用：Codex 相关 skill 增强
-
-4. `ui-ux-pro-max` 初始化
-   - 工具：`uipro init --offline`
-   - 作用：为 `codex/gemini/opencode` 做扩展初始化
-
-> 说明：skill 安装在后台执行，日志位于 `/var/log/entrypoint-skills.log`。
-
----
-
-## 4. 持久化方式说明（重点）
-
-采用三层持久化模型：
-
-1. **Layer 1：配置持久化（自动托管）**
-   - 主机目录：`${DATA_ROOT}/config/*`
-   - 容器目录：`/home/node/.ccman` `/home/node/.claude` `/home/node/.codex` `/home/node/.config/gemini` `/home/node/.config/opencode` `/home/node/.gemini` `/home/node/.openclaw` `/home/node/.task-master` `/home/node/.cargo` `/home/node/go` `/home/node/.cache/go-build` 等
-
-2. **Layer 2：项目工作区**
-   - 主机目录：`${DATA_ROOT}/projects`
-   - 容器目录：`/home/node/projects`
-
-3. **Layer 3：可选外部挂载**
-   - `MOUNT_OPENCLAW`
-   - `MOUNT_EXTRA_1/2/3`
-
-此外，`DATA_ROOT` 根目录本身也会映射到容器同路径，用于执行：
-- `${DATA_ROOT}/user-init.sh`（用户自定义初始化脚本）
-- `${DATA_ROOT}/config/bootstrap/*`（记录可选运行时安装意图，容器重建后仍自动启用）
-
----
-
-## 5. 配置说明（.env）
-
-复制模板：
+### 1. Clone and Configure
 
 ```bash
+git clone https://github.com/moshall/coding_agent_docker.git
+cd coding_agent_docker
 cp .env.example .env
 ```
 
-### 5.1 先看结论：哪些不填会报错？
+然后按需填写 `.env` 中的密钥。
 
-按当前 `docker-compose.yml` 与 `entrypoint.sh` 实现：
-
-1. **没有“必填才可启动”的硬性项**
-   - 不填多数变量时，`docker compose` 会给 warning 并注入空字符串或默认值，不会直接阻断启动。
-2. **“必填”取决于你要用的功能**
-   - 比如要用 Claude/Codex/Gemini/Task Master 某 provider，就必须填对应 API Key。
-
-### 5.2 按功能划分（推荐）
-
-1. 基础运行（有默认值，可不填）
-   - `DATA_ROOT`（默认 `/data/coding-agent`）
-   - `CONTAINER_NAME`（默认 `coding-agent`）
-   - `TZ`（默认 `Asia/Shanghai`）
-   - `NODE_ENV`（默认 `development`）
-   - `INSTALL_GO_RUNTIME`（可选；启动时安装 `golang` 并持久化这个选择）
-   - `INSTALL_BUILD_ESSENTIAL`（可选；启动时安装 `build-essential` 并持久化这个选择）
-   - `PORT_CC_CONNECT`（默认 `8080`）
-   - `PORT_RALPH`（默认 `3000`）
-   - `PORT_DEV`（默认 `9000`）
-   - `DOCKER_IMAGE`（默认 `ghcr.io/moshall/coding_agent_docker:latest`）
-   - `TASKMASTER_MAIN_PROVIDER`（默认 `anthropic`）
-   - `TASKMASTER_MAIN_MODEL`（默认 `claude-sonnet-4-20250514`）
-   - `TAILSCALE_HOSTNAME`（默认 `coding-agent`）
-   - `CODEX_MODEL`（默认 `gpt-5-codex`）
-
-2. 按功能必填（不用对应功能可留空）
-   - `ANTHROPIC_API_KEY`
-     - 需要 Claude CLI，或 Task Master 主 provider/fallback/research 使用 `anthropic` 时必填。
-   - `OPENAI_API_KEY`
-     - 需要 Codex CLI，或 Task Master 使用 `openai` 时必填。
-   - `GEMINI_API_KEY`
-     - 需要 Gemini CLI 时必填。
-   - `OPENROUTER_API_KEY`
-     - Task Master 使用 `openrouter` provider 时必填。
-   - `PERPLEXITY_API_KEY`
-     - Task Master research provider 使用 `perplexity` 时必填。
-
-3. 完全可选（不影响基础启动）
-   - 代理与网关：`ANTHROPIC_BASE_URL` `OPENAI_BASE_URL`
-   - Task Master 研究与兜底：`TASKMASTER_RESEARCH_PROVIDER` `TASKMASTER_RESEARCH_MODEL` `TASKMASTER_FALLBACK_PROVIDER` `TASKMASTER_FALLBACK_MODEL`
-   - GitHub CLI：`GH_TOKEN`
-   - Tailscale：`TAILSCALE_AUTHKEY`
-   - 可选挂载：`MOUNT_OPENCLAW` `MOUNT_EXTRA_1` `MOUNT_EXTRA_2` `MOUNT_EXTRA_3`
-
-### 5.3 最小可用配置示例
-
-如果你只想先把容器跑起来并使用 Claude + Codex，最小可用可先填：
+最小可用示例：
 
 ```env
 ANTHROPIC_API_KEY=your_anthropic_key
 OPENAI_API_KEY=your_openai_key
+# 可选
+GEMINI_API_KEY=your_gemini_key
 ```
 
-其余保持 `.env.example` 默认值即可，后续按需补充。
+说明：
 
----
+- 当前实现里，没有“必须填写才能启动容器”的硬性环境变量。
+- 但你要使用哪个产品，就需要填写对应的 API Key。
+- 不使用的功能可以留空，容器仍可启动。
 
-## 6. 如何拉取和使用
-
-### 6.1 直接拉取镜像
-
-```bash
-docker pull ghcr.io/moshall/coding_agent_docker:latest
-```
-
-### 6.2 使用 Compose 启动（推荐）
+### 2. Start the Container
 
 ```bash
-cp .env.example .env
-# 编辑 .env 填入你的密钥
-
 docker compose up -d
+```
+
+### 3. Enter the Container
+
+推荐直接以 `node` 用户进入：
+
+```bash
 docker compose exec --user node -e NODE_ENV=production coding-agent bash
 ```
 
-补充说明：
-
-1. 镜像运行时主进程会切换到 `node` 用户，但镜像默认配置用户仍是 `root`。
-2. 因此手动进入容器时，建议显式指定 `--user node`，避免把配置写到错误目录或写出 root-only 权限文件。
-3. 如需使用 `docker exec`，推荐命令是：
+如果你用的是 `docker exec`：
 
 ```bash
 docker exec -it --user node -e NODE_ENV=production coding-agent bash
 ```
 
-### 6.3 可复制编排模板（Compose）
+### 4. Smoke Check
 
-下面是可直接复制的最小编排模板（保存为 `docker-compose.template.yml`）：
+```bash
+claude --version
+codex --version
+gemini --version
+task-master --version
+ccman --version
+```
+
+## Configuration
+
+完整变量清单见 [.env.example](./.env.example)。
+
+### Required vs Optional
+
+| 类型 | 变量 | 说明 |
+| --- | --- | --- |
+| 启动有默认值 | `DATA_ROOT`、`CONTAINER_NAME`、`TZ`、`NODE_ENV`、`PORT_*`、`DOCKER_IMAGE` | 留空会回落到默认值 |
+| 按功能必填 | `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`OPENROUTER_API_KEY`、`PERPLEXITY_API_KEY` | 只有使用对应产品或 provider 时才需要 |
+| 可选代理/网关 | `ANTHROPIC_BASE_URL`、`OPENAI_BASE_URL` | 使用代理或兼容网关时填写 |
+| Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
+| 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
+| 可选运行时增强 | `INSTALL_GO_RUNTIME`、`INSTALL_BUILD_ESSENTIAL` | 留空表示关闭，设为 `true` 表示启动时安装，并将选择持久化 |
+| 可选额外挂载 | `MOUNT_OPENCLAW`、`MOUNT_EXTRA_1/2/3` | 用于挂载外部工作区或资源目录 |
+
+### Optional Runtime Package Switches
+
+这两个变量是“开关型变量”，不是必填项：
+
+- `GOPATH`、`GOCACHE` 只是目录位置定义，建议保留，不会因为存在就自动安装 Go。
+- `INSTALL_GO_RUNTIME=` 和 `INSTALL_BUILD_ESSENTIAL=` 留空时，表示关闭。
+- `INSTALL_GO_RUNTIME=true` 或 `INSTALL_BUILD_ESSENTIAL=true` 时，表示在容器启动时安装对应运行时包。
+
+需要特别注意的是，这两个开关带“持久化记忆”：
+
+- 一旦开启过，启动脚本会写入 `${DATA_ROOT}/config/bootstrap/install-go-runtime`
+- 或 `${DATA_ROOT}/config/bootstrap/install-build-essential`
+
+之后即使你把环境变量改回留空，容器仍可能继续安装，因为 marker 文件还在。
+
+如果你想彻底关闭，做两件事：
+
+- 把对应环境变量改回留空
+- 删除对应的 marker 文件
+
+### Default Model Settings
+
+当前默认值来自 [docker-compose.yml](./docker-compose.yml)：
+
+- `CODEX_MODEL=gpt-5-codex`
+- `TASKMASTER_MAIN_PROVIDER=anthropic`
+- `TASKMASTER_MAIN_MODEL=claude-sonnet-4-20250514`
+
+## Persistence Model
+
+这个镜像不是“每次重建都从零开始”的一次性容器，而是带明确持久化设计的工作容器。
+
+### Three Layers
+
+| 层级 | 主机侧 | 容器侧 | 作用 |
+| --- | --- | --- | --- |
+| Layer 1 | `${DATA_ROOT}/config/*` | 各工具配置目录 | 持久化授权、配置、缓存和工具状态 |
+| Layer 2 | `${DATA_ROOT}/projects` | `/home/node/projects` | 持久化项目源码和工作区 |
+| Layer 3 | `MOUNT_OPENCLAW`、`MOUNT_EXTRA_*` | `/home/node/openclaw`、`/home/node/workspace-*` | 可选外部挂载 |
+
+额外约定：
+
+- `${DATA_ROOT}/config/bootstrap/*` 用来记录是否启用了 `golang` / `build-essential` 的运行时安装。
+- `${DATA_ROOT}/user-init.sh` 可作为用户自定义启动脚本。
+- `${DATA_ROOT}` 根目录本身会映射到容器内同路径，便于脚本和附加资源直接访问。
+
+<details>
+<summary>展开查看主要持久化目录映射</summary>
+
+- `${DATA_ROOT}/config/claude` -> `/home/node/.claude`
+- `${DATA_ROOT}/config/codex` -> `/home/node/.codex`
+- `${DATA_ROOT}/config/ccman` -> `/home/node/.ccman`
+- `${DATA_ROOT}/config/gemini` -> `/home/node/.config/gemini`
+- `${DATA_ROOT}/config/gemini-home` -> `/home/node/.gemini`
+- `${DATA_ROOT}/config/opencode` -> `/home/node/.config/opencode`
+- `${DATA_ROOT}/config/openclaw-home` -> `/home/node/.openclaw`
+- `${DATA_ROOT}/config/taskmaster` -> `/home/node/.task-master`
+- `${DATA_ROOT}/config/gh` -> `/home/node/.config/gh`
+- `${DATA_ROOT}/config/tailscale` -> `/var/lib/tailscale`
+- `${DATA_ROOT}/config/go` -> `/home/node/go`
+- `${DATA_ROOT}/config/go-build-cache` -> `/home/node/.cache/go-build`
+- `${DATA_ROOT}/cron/crontabs` -> `/var/spool/cron/crontabs`
+- `${DATA_ROOT}/projects` -> `/home/node/projects`
+
+</details>
+
+## Deployment Examples
+
+### Compose Template
+
+仓库内已经提供可直接使用的 [docker-compose.yml](./docker-compose.yml)。
+如果你想复制一份最常用的公开镜像编排模板，可以使用下面这个版本：
 
 ```yaml
 services:
   coding-agent:
-    # 推荐直接使用公开 GHCR 镜像
     image: ghcr.io/moshall/coding_agent_docker:latest
-
-    # 固定容器名，便于 docker exec / logs / restart
     container_name: coding-agent
-
-    # 容器异常退出后自动拉起，适合常驻开发环境
     restart: unless-stopped
 
-    # 从 .env 读取 API Key、路径、端口等配置
     env_file:
       - .env
 
-    # 这里放少量高频基础变量；密钥仍建议放在 .env
     environment:
-      # 持久化根目录，配置、项目、脚本都放在这里
       - DATA_ROOT=/data/coding-agent
-      # 容器内时区
       - TZ=Asia/Shanghai
-      # 运行环境标记，默认开发态
       - NODE_ENV=development
-      # Go 相关用户目录，配合下面的卷映射保留模块与构建缓存
       - GOPATH=/home/node/go
       - GOCACHE=/home/node/.cache/go-build
-      # 可选：启动时安装 Go toolchain，并把这个选择持久化到 DATA_ROOT/config/bootstrap
       - INSTALL_GO_RUNTIME=
-      # 可选：启动时安装 build-essential，并把这个选择持久化到 DATA_ROOT/config/bootstrap
       - INSTALL_BUILD_ESSENTIAL=
 
-    # 卷映射：把配置和项目持久化到宿主机
     volumes:
-      # 整个数据根目录映射到容器内同路径，便于 user-init.sh 等脚本直接访问
+      # 数据根目录，保留配置、项目与 user-init.sh
       - /data/coding-agent:/data/coding-agent
       # 项目工作区
       - /data/coding-agent/projects:/home/node/projects
@@ -255,70 +261,44 @@ services:
       - /data/coding-agent/config/claude:/home/node/.claude
       # Codex 配置与登录态
       - /data/coding-agent/config/codex:/home/node/.codex
-      # ccman 的 provider 列表与切换记录
+      # ccman provider 配置
       - /data/coding-agent/config/ccman:/home/node/.ccman
-      # Gemini CLI 配置
+      # Gemini 配置
       - /data/coding-agent/config/gemini:/home/node/.config/gemini
-      # Gemini 家目录（部分工具按 HOME 路径读取）
       - /data/coding-agent/config/gemini-home:/home/node/.gemini
-      # OpenCode 配置
+      # OpenCode / OpenClaw / Task Master
       - /data/coding-agent/config/opencode:/home/node/.config/opencode
-      # OpenClaw 家目录（ccman 可管理）
       - /data/coding-agent/config/openclaw-home:/home/node/.openclaw
-      # Task Master 配置与任务数据
       - /data/coding-agent/config/taskmaster:/home/node/.task-master
-      # Rust/Cargo 工具链缓存与用户 cargo 目录
-      - /data/coding-agent/config/cargo:/home/node/.cargo
-      # Go 工作目录（GOPATH）
+      # Go 持久化
       - /data/coding-agent/config/go:/home/node/go
-      # Go 构建缓存（GOCACHE）
       - /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build
 
-    # 端口映射：按需保留；不需要对外暴露时可以删除对应项
     ports:
-      # 8080 -> cc-connect 预留端口
-      # 适合 cc-connect Web/API/桥接服务使用
+      # 8080: 预留给 cc-connect 或桥接服务
       - "8080:8080"
-
-      # 3000 -> Ralph Orchestrator 预留端口
-      # 适合 Ralph 的 Web 界面或 API 使用
+      # 3000: 预留给 Ralph / Web UI 类服务
       - "3000:3000"
-
-      # 9000 -> 通用开发/调试端口
-      # 可留给临时 Web 服务、调试页面、Dev Server 使用
+      # 9000: 通用开发或调试端口
       - "9000:9000"
 
-    # Tailscale 需要 NET_ADMIN 能力
     cap_add:
       - NET_ADMIN
 
-    # Tailscale 需要 /dev/net/tun 设备
     devices:
       - /dev/net/tun:/dev/net/tun
 
-    # 保持交互终端能力，便于 docker exec 进入后长期使用
     stdin_open: true
     tty: true
 ```
 
-补充说明：
-
-1. `8080 / 3000 / 9000` 是镜像预留的常用映射，不代表容器启动后一定默认已有进程监听。
-2. `8080` 主要对应 `cc-connect` 这类连接/桥接服务。
-3. `3000` 主要预留给 `Ralph Orchestrator` 这类 Web/UI 服务。
-4. `9000` 是通用开发端口，适合你自己在容器里临时启动调试服务。
-5. 如果你只把它当作纯 CLI 工作容器，`ports:` 整段都可以先去掉。
-
-使用方式：
+启动：
 
 ```bash
-docker compose -f docker-compose.template.yml up -d
-docker compose -f docker-compose.template.yml exec --user node -e NODE_ENV=production coding-agent bash
+docker compose up -d
 ```
 
-### 6.4 可复制运行示例（docker run）
-
-不使用 Compose 时，可以直接运行：
+### docker run Example
 
 ```bash
 docker run -d --name coding-agent \
@@ -344,233 +324,166 @@ docker run -d --name coding-agent \
   -v /data/coding-agent/config/opencode:/home/node/.config/opencode \
   -v /data/coding-agent/config/openclaw-home:/home/node/.openclaw \
   -v /data/coding-agent/config/taskmaster:/home/node/.task-master \
-  -v /data/coding-agent/config/cargo:/home/node/.cargo \
   -v /data/coding-agent/config/go:/home/node/go \
   -v /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build \
   ghcr.io/moshall/coding_agent_docker:latest
 ```
 
-进入容器：
+### Port Notes
+
+- `8080`、`3000`、`9000` 是镜像预留的常用映射，不代表容器启动后一定默认已有进程监听。
+- 如果你只把它当作纯 CLI 工作容器，可以删除 `ports:` 相关配置。
+- 如果你需要让宿主机或其他容器访问容器内服务，服务本身需要监听 `0.0.0.0`；仅做 Docker 端口映射并不会自动改写应用的绑定地址。
+
+## Common Operations
+
+### Enter Shell
+
+默认 `docker exec` 常常以 `root` 进入，但这个镜像推荐把日常操作落在 `node` 用户下：
 
 ```bash
-docker exec -it --user node -e NODE_ENV=production coding-agent bash
+docker compose exec --user node -e NODE_ENV=production coding-agent bash
 ```
 
-### 6.5 可复制构建示例（本地构建镜像）
+说明：
 
-如果你要基于源码在本地构建镜像，可直接复制：
+- 容器启动后主进程会切换为 `node` 用户。
+- 但你手动 `docker exec` 时，默认用户仍可能是 `root`。
+- 如果你用 `root` 进入后执行普通命令，容易写出 root 权限的配置文件，后续再切回 `node` 时会遇到权限问题。
 
-```bash
-git clone https://github.com/moshall/coding_agent_docker.git
-cd coding_agent_docker
-docker build --no-cache -t coding-agent:local .
-```
+### Use ccman
 
-然后用本地镜像启动：
+`ccman` 已做包装优化，行为如下：
 
-```bash
-cp .env.example .env
-echo "DOCKER_IMAGE=coding-agent:local" >> .env
-docker compose up -d
-```
+- 即使你在 `root` shell 里执行 `ccman`，它也会自动切换为 `node` 用户运行。
+- 会自动固定 `NODE_ENV=production`，避免配置落到 `/tmp/ccman-dev`。
+- `ccman` 的配置会持久化到 `${DATA_ROOT}/config/ccman`。
+- 通过 `ccman` 写入的 Claude、Codex、Gemini、OpenCode、OpenClaw 配置都会落在对应持久化目录中。
 
-### 6.6 运行后快速自检
+常用命令：
 
 ```bash
-claude --version
-codex --version
-gemini --version
-task-master --version
-```
-
-### 6.7 使用 ccman 做快捷配置（推荐）
-
-`ccman` 已预装，并且镜像内做了包装优化：
-
-1. 即使你从 `root` shell 里执行 `ccman`，也会自动切换为 `node` 用户执行。
-2. 会自动强制 `NODE_ENV=production`，避免落到 `/tmp/ccman-dev`。
-3. `ccman` 自身配置会持久化到 `${DATA_ROOT}/config/ccman`。
-4. 通过 `ccman` 写入的 Claude/Codex/Gemini/OpenCode/OpenClaw 配置，也会落到各自持久化目录。
-
-常用命令（可直接复制）：
-
-```bash
-# 直接进入 ccman 交互界面
-docker compose exec coding-agent ccman
-
-# 或者进入容器 shell；即使这里是 root，后续执行 ccman 也会自动切到 node + production
-docker compose exec coding-agent bash
-
-# 或者使用 docker exec
-docker exec -it coding-agent ccman
-
-# Claude: 新增 provider（交互式）
 ccman cc add
-
-# Claude: 查看与切换
 ccman cc ls
-ccman cc use <provider_name>
+ccman cc use <name>
 ccman cc current
 
-# Codex: 新增 provider（交互式）
 ccman cx add
-
-# Codex: 查看与切换
 ccman cx ls
-ccman cx use <provider_name>
+ccman cx use <name>
 ccman cx current
 ```
 
-补充说明：
+如果你只是想直接打开交互界面：
 
-1. `ccman` 命令已强制使用 `node` 用户和 `/home/node` 作为 HOME，因此可以直接在默认容器环境下运行，不再要求你手工加 `--user node` 或 `-e NODE_ENV=production`。
-2. 为了避免 ccman 开发模式目录带来的丢失风险，包装脚本会固定 `NODE_ENV=production`，从而把配置写到 `/home/node/.ccman`、`/home/node/.claude`、`/home/node/.codex`、`/home/node/.gemini`、`/home/node/.config/opencode`、`/home/node/.openclaw`。
-3. 这些目录都已映射到 `${DATA_ROOT}/config/*` 下，因此容器重建后配置仍然存在。
-4. 普通 shell 操作依旧建议使用 `node` 用户进入；这次优化只针对 `ccman` 做了“自动切到 node”的兜底。
-5. 如需查看全部能力，可执行 `ccman --help`、`ccman cc --help`、`ccman cx --help`。
-6. `ccman export` 会导出包含密钥的配置文件，务必妥善保管并避免提交到 git。
+```bash
+docker compose exec coding-agent ccman
+```
 
----
+### Check Runtime Version
 
-## 7. 自动构建与发布时间
+容器内查看运行时版本元数据：
 
-仓库内置工作流：
-- 文件：`.github/workflows/build-push.yml`
-- 触发条件：
-  1. `main` 分支 push
-  2. 手动触发 `workflow_dispatch`
-  3. 定时触发 `schedule`（每日北京时间 07:00）
+```bash
+echo "$CODING_AGENT_VERSION"
+echo "$CODING_AGENT_BUILD_DATE"
+echo "$CODING_AGENT_VCS_REF"
+```
 
-发布门禁：
+在宿主机查看镜像 OCI 标签：
 
-1. `docker compose config` 检查
-2. `--no-cache` 全量构建
-3. 容器启动就绪检查
-4. 多项回归（CLI/配置/Rust/持久化/user-init 等）
-5. 仅全部通过后才推送 GHCR
+```bash
+docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' ghcr.io/moshall/coding_agent_docker:latest
+```
 
-标签策略：
+## Build and Release
 
-- `latest`
-- `sha-<12位提交哈希>`
-- `date-YYYYMMDD`
-- `vX.Y.Z`（仅当 push 的是版本 tag，例如 `v1.0.0`）
+自动构建工作流见 [.github/workflows/build-push.yml](./.github/workflows/build-push.yml)。
 
-版本策略说明：
+### Trigger Rules
 
-1. Git tag / GitHub Release 版本，和镜像版本是两层概念，但现在这两层已经打通。
-2. 当工作流由 `main` 分支 push 触发时，会继续发布：
-   - `latest`
-   - `sha-*`
-   - `date-*`
-3. 当工作流由 `vX.Y.Z` tag push 触发时，会额外发布同名镜像 tag：
-   - `ghcr.io/moshall/coding_agent_docker:vX.Y.Z`
-4. 镜像内部也会写入版本元数据：
-   - OCI Label：`org.opencontainers.image.version`
-   - 运行时环境变量：`CODING_AGENT_VERSION`
-5. 因此，即使项目没有单独的 `coding-agent --version` 命令，仍然可以明确区分每个发布版本。
+以下情况会触发构建：
 
-### 7.1 构建耗时说明
+- `main` 分支 push
+- `v*` 版本 tag push
+- 手动触发 `workflow_dispatch`
+- 每日北京时间 `07:00` 的定时构建
 
-- 日常 no-cache 构建 + 回归，通常在 **15~40 分钟**（受网络与 GitHub runner 资源波动影响）
-- 实际时间以 Actions 每次运行记录为准
+### Publish Gates
 
----
+只有通过以下检查后，镜像才会推送到 GHCR：
 
-## 8. 让他人直接拉取使用
+- `docker compose config` 检查
+- `docker compose -f docker-compose.dev.yml build --no-cache`
+- 容器启动就绪检查
+- CLI 可用性回归
+- 配置生成回归
+- 持久化、`user-init.sh`、端口与技能初始化回归
 
-可以，前提是：
+### Tag Strategy
 
-1. GitHub 仓库是公开的
-2. GHCR 包可见性设为 `public`
+| 标签 | 含义 | 是否适合生产固定版本 |
+| --- | --- | --- |
+| `latest` | 最新一次主干成功构建 | 否，适合跟进最新 |
+| `sha-<12位提交哈希>` | 对应某次具体提交 | 是 |
+| `date-YYYYMMDD` | 对应某日构建 | 视需求而定 |
+| `vX.Y.Z` | 显式版本发布 | 是，最推荐 |
 
-设置路径：
-- GitHub 仓库页面 -> Packages -> 选择 `coding_agent_docker` 包 -> Package settings -> Change visibility -> `Public`
-
-完成后，他人可匿名拉取：
+拉取示例：
 
 ```bash
 docker pull ghcr.io/moshall/coding_agent_docker:latest
+docker pull ghcr.io/moshall/coding_agent_docker:v1.0.1
 ```
 
-如果你希望固定到某个正式发布版本，可以直接拉取版本 tag：
+## Troubleshooting
+
+### `docker compose exec` 提示找不到配置文件
+
+你需要在包含 `docker-compose.yml` 的目录执行，或者显式指定文件：
 
 ```bash
-docker pull ghcr.io/moshall/coding_agent_docker:vX.Y.Z
+docker compose -f /path/to/docker-compose.yml exec coding-agent bash
 ```
 
----
+### 容器启动了，但没有 Web 页面
 
-## 9. 注意事项
+这是预期行为。这个镜像的默认定位是通用 CLI 工作容器，端口只是预留映射，不代表默认就有某个 Web 服务在监听。
 
-1. **密钥安全**
-   - `.env` 含敏感信息，不要提交到 git
-   - 建议按环境分发不同密钥
+### `ccman` 配置后看起来没生效
 
-2. **磁盘空间**
-   - no-cache 构建会占用较大空间
-   - 建议预留至少 35GB 可用空间
+优先使用镜像内的 `ccman` 包装命令，或者直接以 `node` 用户进入容器后再操作。避免把配置写成 root 所有者。
 
-3. **Tailscale 运行条件**
-   - 需要 `NET_ADMIN` 与 `/dev/net/tun`
-   - 某些 CI runner 不具备该能力，需跳过或降级检查
+### 首次启动比较慢
 
-4. **首次启动耗时**
-   - 首次会进行配置生成、skill 初始化，以及按需 Rust / Go / build-essential 安装
-   - 后续因持久化会明显更快
+也是预期行为。首次启动会做目录初始化、配置生成、skills/extensions 安装，以及可选运行时包的初始化。后续因持久化会明显更快。
 
-5. **可选挂载默认是 /dev/null 占位**
-   - 不配置 `MOUNT_*` 时为占位策略，属于预期行为
+### 本地无缓存构建占用空间较大
 
-6. **镜像默认目标**
-   - `docker-compose.yml` 默认拉取 GHCR 的 `latest`
-   - 如需固定版本，建议改为 `vX.Y.Z`、`sha-*` 或 `date-*` 标签
+如果只是使用公开镜像，建议直接拉取 GHCR 版本；本地 `--no-cache` 构建会明显增加磁盘占用。
 
-7. **如何查看镜像版本**
-   - 容器内可执行：`echo $CODING_AGENT_VERSION`
-   - 宿主机可执行：
-     `docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' ghcr.io/moshall/coding_agent_docker:latest`
+### Tailscale 无法启动
 
----
+请确认宿主机提供了 `NET_ADMIN` 能力和 `/dev/net/tun` 设备；某些受限环境或 CI runner 不具备这些条件。
 
-## 10. 常用运维命令
+## Related Docs
 
-```bash
-# 查看容器状态
-docker compose ps
+- [docker-compose.yml](./docker-compose.yml): 默认部署编排
+- [docker-compose.dev.yml](./docker-compose.dev.yml): 本地构建与 CI 回归编排
+- [.env.example](./.env.example): 环境变量模板
+- [user-init.sh.example](./user-init.sh.example): 自定义启动脚本示例
+- [CHANGELOG.md](./CHANGELOG.md): 版本变更记录
+- [UPGRADING.md](./UPGRADING.md): 升级说明
+- [CONTRIBUTING.md](./CONTRIBUTING.md): 贡献指南
+- [SECURITY.md](./SECURITY.md): 安全说明
+- [RELEASE_NOTES.md](./RELEASE_NOTES.md): 发布说明
 
-# 查看启动日志
-docker compose logs --tail=200 coding-agent
+## Support
 
-# 进入容器
-docker compose exec coding-agent bash
+- 使用问题、缺陷反馈或镜像异常，请在 [GitHub Issues](https://github.com/moshall/coding_agent_docker/issues) 提交。
+- 版本发布与变更记录可在 [Releases](https://github.com/moshall/coding_agent_docker/releases) 查看。
+- 如果你要贡献改进，可先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
-# 重建（本地）
-docker compose -f docker-compose.dev.yml build --no-cache
+## License
 
-# 重启
-docker compose restart coding-agent
-
-# 停止并清理
-docker compose down
-```
-
----
-
-## 11. 回归基线（当前）
-
-在 Debian 12 与 Ubuntu 22.04 环境均完成过完整回归，核心检查包括：
-
-- `PID1=node`、`restart=0`
-- 多 CLI 可用性
-- 配置自动生成正确性
-- `wire_api = "responses"`
-- Rust toolchain 可用
-- `user-init.sh` 生效
-- host/container 双向持久化
-
----
-
-## 12. 许可证
-
-遵循仓库中的 `LICENSE` 文件。
+遵循仓库中的 [LICENSE](./LICENSE) 文件。

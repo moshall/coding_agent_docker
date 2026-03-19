@@ -22,9 +22,6 @@ set -euo pipefail
 # Python packages
 # pip3 install --break-system-packages jupyterlab notebook
 
-# Rust tools as node user
-# su - node -c "cargo install ripgrep bat"
-
 # Shell customization
 # cat >> /home/node/.bashrc <<'BASHRC'
 # alias ll='ls -alF'

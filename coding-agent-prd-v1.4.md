@@ -7,6 +7,8 @@
 **最后更新**：2026-03-13  
 **变更说明**：全面重写。三层目录心智模型、标准 Compose bind mount（移除 --privileged/C2 方案）、user-init.sh 用户软件持久化钩子、MOUNT_OPENCLAW 命名挂载
 
+> 说明：本文档是 v1.4 阶段的历史 PRD，文中部分 Rust / Cargo 设计已不再代表当前实现。当前仓库版本已移除默认 Rust 自举与 `config/cargo` 持久化映射，请以 `README.md`、`docker-compose.yml`、`entrypoint.sh` 和 CI 配置为准。
+
 ---
 
 ## 1. 背景与动机

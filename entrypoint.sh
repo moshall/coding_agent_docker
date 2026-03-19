@@ -75,15 +75,6 @@ sync_repo_as_node() {
   run_with_timeout_as_node "${seconds}" "tmp='${dest}.tmp'; rm -rf \"\${tmp}\"; git clone --depth 1 '${url}' \"\${tmp}\" && rm -rf '${dest}' && mv \"\${tmp}\" '${dest}'"
 }
 
-ensure_rust_toolchain() {
-  if [[ -x /home/node/.cargo/bin/rustc ]] && [[ -f /home/node/.cargo/env ]]; then
-    return
-  fi
-
-  log "initializing rust toolchain for mounted cargo directory..."
-  run_with_timeout_as_node 240 "curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"
-}
-
 ensure_runtime_packages() {
   local install_go=0
   local install_build=0
@@ -135,7 +126,6 @@ mkdir -p \
   /home/node/.task-master \
   /home/node/.config/gh \
   /var/lib/tailscale \
-  /home/node/.cargo \
   /home/node/go \
   /home/node/.cache/go-build \
   /var/spool/cron/crontabs \
@@ -159,7 +149,6 @@ for owned_dir in \
   /home/node/.config \
   /home/node/.openclaw \
   /home/node/.task-master \
-  /home/node/.cargo \
   /home/node/go \
   /home/node/.cache \
   /var/spool/cron/crontabs; do
@@ -179,7 +168,6 @@ log "starting cron..."
 safe_start_cron
 maybe_start_tailscale
 ensure_runtime_packages
-ensure_rust_toolchain
 
 CLAUDE_SETTINGS="/home/node/.claude/settings.json"
 if [[ ! -f "${CLAUDE_SETTINGS}" ]] && [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then

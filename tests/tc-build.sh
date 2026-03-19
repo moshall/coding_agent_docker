@@ -12,8 +12,8 @@ run_check "TC-BUILD-06 fallback build is module-independent" grep -Fq 'GO111MODU
 run_check "TC-BUILD-07 runtime image excludes Go apt package" bash -c "! grep -Fq '      golang \\' Dockerfile"
 run_check "TC-BUILD-08 runtime image excludes build-essential apt package" bash -c "! grep -Fq '      build-essential \\' Dockerfile"
 run_check "TC-BUILD-09 entrypoint supports optional runtime packages" grep -Fq 'installing optional runtime packages' entrypoint.sh
-run_check "TC-BUILD-10 entrypoint keeps lazy Rust initialization" grep -Fq 'initializing rust toolchain for mounted cargo directory' entrypoint.sh
-run_check "TC-BUILD-11 Rust is not preinstalled during image build" bash -c "! grep -Fq 'su - node -c \"curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable\"' Dockerfile"
+run_check "TC-BUILD-10 entrypoint no longer bootstraps Rust toolchain" bash -c "! grep -Fq 'initializing rust toolchain for mounted cargo directory' entrypoint.sh"
+run_check "TC-BUILD-11 runtime image no longer exposes cargo bin path" bash -c "! grep -Fq '/home/node/.cargo/bin' Dockerfile"
 run_check "TC-BUILD-12 build no longer clones superpowers repo" bash -c "! grep -Fq 'https://github.com/obra/superpowers' Dockerfile"
 run_check "TC-BUILD-13 build no longer clones openclaw skills repo" bash -c "! grep -Fq 'https://github.com/openclaw/skills' Dockerfile"
 run_check "TC-BUILD-14 entrypoint defers repo bootstrap to runtime" grep -Fq 'sync_repo_as_node "https://github.com/openclaw/skills"' entrypoint.sh

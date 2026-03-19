@@ -115,8 +115,6 @@ RUN set -eux; \
     install_global uipro-cli; \
     install_global ralph-orchestrator 1
 
-ENV PATH="/home/node/.cargo/bin:${PATH}"
-
 COPY --from=go-builder /build/cc-connect /usr/local/bin/cc-connect
 COPY ccman-wrapper.sh /tmp/ccman-wrapper.sh
 COPY entrypoint.sh /entrypoint.sh

@@ -19,7 +19,7 @@ docker compose exec coding-agent bash
 - OpenCode
 - Task Master
 - cc-connect, ccman
-- Node/Python/Go/Rust toolchain
+- Node/Python toolchain, with optional Go runtime bootstrap
 
 ## Persistence
 

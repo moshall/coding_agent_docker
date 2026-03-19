@@ -193,7 +193,6 @@ jobs:
           import pandas, matplotlib, seaborn, scipy
           print('ok')
           PY"
-          check "rust toolchain for node" "docker exec -u node coding-agent bash -c 'source ~/.cargo/env && rustc --version && cargo --version'"
 
           check "claude config generated" "docker exec coding-agent test -f /home/node/.claude/settings.json"
           check "codex config generated" "docker exec coding-agent test -f /home/node/.codex/config.toml"
