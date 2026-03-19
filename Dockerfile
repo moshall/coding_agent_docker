@@ -98,7 +98,6 @@ RUN set -eux; \
     install_global ralph-orchestrator 1
 
 RUN set -eux; \
-    su - node -c "curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain stable"; \
     su - node -c "git clone --depth 1 https://github.com/obra/superpowers /home/node/.superpowers || true"; \
     su - node -c "git clone --depth 1 https://github.com/openclaw/skills /home/node/.openclaw-skills || true"
 

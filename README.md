@@ -33,7 +33,7 @@
 - `node:22-bookworm`（主运行环境）
 - `golang`（构建/运行 Go 生态工具）
 - `python3 + pip`（数据分析、脚本任务）
-- `rustup + rust stable`（Rust 工具链）
+- `rustup + rust stable`（首次启动按需安装，并持久化到 `DATA_ROOT/config/cargo`）
 
 ### 2.2 预装 AI CLI
 
@@ -60,9 +60,10 @@
 2. 启动 `cron`
 3. 启动 `tailscaled`（有 `TAILSCALE_AUTHKEY` 时自动 `tailscale up`）
 4. 自动生成缺失配置文件（Claude/Codex/Gemini/Task Master）
-5. 后台安装 skills/extensions（不阻塞终端）
-6. 可选执行 `${DATA_ROOT}/user-init.sh`
-7. 最终切换到 `node` 用户
+5. 如有需要，为挂载的 cargo 目录初始化 Rust toolchain
+6. 后台安装 skills/extensions（不阻塞终端）
+7. 可选执行 `${DATA_ROOT}/user-init.sh`
+8. 最终切换到 `node` 用户
 
 ---
 
@@ -247,6 +248,8 @@ services:
       - /data/coding-agent/config/gemini:/home/node/.config/gemini
       # Task Master 配置与任务数据
       - /data/coding-agent/config/taskmaster:/home/node/.task-master
+      # Rust/Cargo 工具链缓存与用户 cargo 目录
+      - /data/coding-agent/config/cargo:/home/node/.cargo
 
     # 端口映射：按需保留；不需要对外暴露时可以删除对应项
     ports:
@@ -312,6 +315,7 @@ docker run -d --name coding-agent \
   -v /data/coding-agent/config/codex:/home/node/.codex \
   -v /data/coding-agent/config/gemini:/home/node/.config/gemini \
   -v /data/coding-agent/config/taskmaster:/home/node/.task-master \
+  -v /data/coding-agent/config/cargo:/home/node/.cargo \
   ghcr.io/moshall/coding_agent_docker:latest
 ```
 
@@ -453,7 +457,7 @@ docker pull ghcr.io/moshall/coding_agent_docker:latest
    - 某些 CI runner 不具备该能力，需跳过或降级检查
 
 4. **首次启动耗时**
-   - 首次会进行配置生成与 skill 初始化
+   - 首次会进行配置生成、skill 初始化，以及按需 Rust toolchain 安装
    - 后续因持久化会明显更快
 
 5. **可选挂载默认是 /dev/null 占位**
