@@ -201,33 +201,77 @@ docker compose exec coding-agent bash
 ```yaml
 services:
   coding-agent:
+    # 推荐直接使用公开 GHCR 镜像
     image: ghcr.io/moshall/coding_agent_docker:latest
+
+    # 固定容器名，便于 docker exec / logs / restart
     container_name: coding-agent
+
+    # 容器异常退出后自动拉起，适合常驻开发环境
     restart: unless-stopped
+
+    # 从 .env 读取 API Key、路径、端口等配置
     env_file:
       - .env
+
+    # 这里放少量高频基础变量；密钥仍建议放在 .env
     environment:
+      # 持久化根目录，配置、项目、脚本都放在这里
       - DATA_ROOT=/data/coding-agent
+      # 容器内时区
       - TZ=Asia/Shanghai
+      # 运行环境标记，默认开发态
       - NODE_ENV=development
+
+    # 卷映射：把配置和项目持久化到宿主机
     volumes:
+      # 整个数据根目录映射到容器内同路径，便于 user-init.sh 等脚本直接访问
       - /data/coding-agent:/data/coding-agent
+      # 项目工作区
       - /data/coding-agent/projects:/home/node/projects
+      # Claude Code 配置与登录态
       - /data/coding-agent/config/claude:/home/node/.claude
+      # Codex 配置与登录态
       - /data/coding-agent/config/codex:/home/node/.codex
+      # Gemini CLI 配置
       - /data/coding-agent/config/gemini:/home/node/.config/gemini
+      # Task Master 配置与任务数据
       - /data/coding-agent/config/taskmaster:/home/node/.task-master
+
+    # 端口映射：按需保留；不需要对外暴露时可以删除对应项
     ports:
+      # 8080 -> cc-connect 预留端口
+      # 适合 cc-connect Web/API/桥接服务使用
       - "8080:8080"
+
+      # 3000 -> Ralph Orchestrator 预留端口
+      # 适合 Ralph 的 Web 界面或 API 使用
       - "3000:3000"
+
+      # 9000 -> 通用开发/调试端口
+      # 可留给临时 Web 服务、调试页面、Dev Server 使用
       - "9000:9000"
+
+    # Tailscale 需要 NET_ADMIN 能力
     cap_add:
       - NET_ADMIN
+
+    # Tailscale 需要 /dev/net/tun 设备
     devices:
       - /dev/net/tun:/dev/net/tun
+
+    # 保持交互终端能力，便于 docker exec 进入后长期使用
     stdin_open: true
     tty: true
 ```
+
+补充说明：
+
+1. `8080 / 3000 / 9000` 是镜像预留的常用映射，不代表容器启动后一定默认已有进程监听。
+2. `8080` 主要对应 `cc-connect` 这类连接/桥接服务。
+3. `3000` 主要预留给 `Ralph Orchestrator` 这类 Web/UI 服务。
+4. `9000` 是通用开发端口，适合你自己在容器里临时启动调试服务。
+5. 如果你只把它当作纯 CLI 工作容器，`ports:` 整段都可以先去掉。
 
 使用方式：
 
