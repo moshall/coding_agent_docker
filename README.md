@@ -82,7 +82,7 @@
 
 镜像会按幂等方式初始化以下内容（详见 [obra/superpowers](https://github.com/obra/superpowers)）：
 
-- **Superpowers — Claude Code**：首次后台执行 `claude plugin install superpowers@claude-plugins-official`（可用 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false` 关闭；需出网）。
+- **Superpowers — Claude Code**：默认开启，首次后台执行 `claude plugin marketplace add obra/superpowers-marketplace` 后安装 `superpowers@superpowers-marketplace`（失败时再尝试 `superpowers@claude-plugins-official`，与 [obra/superpowers README](https://github.com/obra/superpowers#claude-code-official-marketplace) 一致）。可用 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false` 关闭；需出网。
 - **Superpowers — Codex**：与官方 [.codex/INSTALL.md](https://github.com/obra/superpowers/blob/main/.codex/INSTALL.md) 一致——`~/.superpowers` 的克隆同步 **`ln -s` → `~/.codex/superpowers`**，再 **`~/.agents/skills/superpowers` → .../skills**（Codex 通过 `~/.agents/skills` 发现 skill）。
 - `planning-with-files`、`oil-oil/codex`、`uipro init --ai codex --offline`（Codex 端 ui-ux-pro-max）。
 
@@ -147,6 +147,16 @@ cloudcli version
 # 浏览器访问（宿主机映射默认 3001）：http://<主机>:3001
 ```
 
+### 5. 升级镜像（尽量无感）
+
+数据在 `DATA_ROOT`，更换镜像版本一般不丢配置。发布新版本后在本机编排目录执行：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+可选：`docker compose up -d --force-recreate` 强制用新 entrypoint 启容器。若自行 Pin 了 `DOCKER_IMAGE=...:sha-xxx`，请同步改为新 digest 或 `latest`。
+
 ## Configuration
 
 完整变量清单见 [.env.example](./.env.example)。
@@ -161,7 +171,7 @@ cloudcli version
 | Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
 | 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
 | CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
-| Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE` | Claude 侧官方插件安装；Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
+| Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE`（默认 `true`） | Claude 侧官方插件安装（需出网）；`false` 可关闭；Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
 | 可选运行时增强 | `INSTALL_GO_RUNTIME`、`INSTALL_BUILD_ESSENTIAL` | 留空表示关闭，设为 `true` 表示启动时安装，并将选择持久化 |
 | 用户自定义挂载 | 自行编辑 `docker-compose.yml` 的 `volumes` | 例如与宿主机其它项目目录同路径挂载，镜像不提供 OpenClaw 专用变量 |
 
@@ -327,6 +337,17 @@ docker compose exec --user node -e NODE_ENV=production coding-agent bash
 - 容器启动后主进程会切换为 `node` 用户。
 - 但你手动 `docker exec` 时，默认用户仍可能是 `root`。
 - 如果你用 `root` 进入后执行普通命令，容易写出 root 权限的配置文件，后续再切回 `node` 时会遇到权限问题。
+
+### 校验 Superpowers（Claude 官方插件）
+
+默认开启时，安装在后台写入 `/var/log/entrypoint-skills.log`。仓库提供脚本，可在**有 Docker 的宿主机**上一键核对环境变量、日志与 `claude plugin list`：
+
+```bash
+chmod +x scripts/verify-superpowers-claude-plugin.sh
+./scripts/verify-superpowers-claude-plugin.sh coding-agent
+```
+
+若 `.env` 中设为 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false`，脚本会说明为关闭态并直接退出成功。修改开关后需 `docker compose up -d`（必要时 `docker compose up -d --force-recreate`）再测。
 
 ### Use ccman
 

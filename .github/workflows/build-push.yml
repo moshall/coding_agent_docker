@@ -206,6 +206,8 @@ jobs:
           check "image BOM has build metadata" "docker exec coding-agent grep -q coding_agent_version /usr/share/doc/coding-agent/bom.json"
           check "host->container persistence" "sudo mkdir -p '${GITHUB_WORKSPACE}/.ci-data/project' && echo host-\$(date +%s) | sudo tee '${GITHUB_WORKSPACE}/.ci-data/project/host-sync.txt' >/dev/null && docker exec coding-agent sh -lc 'cat /home/node/project/host-sync.txt' | grep -q '^host-'"
           check "container->host persistence" "docker exec coding-agent sh -lc 'echo container-\$(date +%s) > /home/node/project/container-sync.txt' && grep -q '^container-' '${GITHUB_WORKSPACE}/.ci-data/project/container-sync.txt'"
+          check "node writable ~/.claude (bind mount)" "docker exec -u node coding-agent sh -lc 'touch /home/node/.claude/.ci-write-test && rm -f /home/node/.claude/.ci-write-test'"
+          check "node writable ~/.agents" "docker exec -u node coding-agent sh -lc 'mkdir -p /home/node/.agents/skills && touch /home/node/.agents/skills/.ci-write-test && rm -f /home/node/.agents/skills/.ci-write-test'"
           check "task-master help as node" "docker exec -u node coding-agent bash -c 'task-master --help >/dev/null'"
 
           echo "SUMMARY PASS=$pass FAIL=$fail SKIP=$skip"

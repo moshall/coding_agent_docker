@@ -291,6 +291,16 @@ if [[ -e /home/node/projects ]]; then
   chown -h node:node /home/node/projects 2>/dev/null || true
 fi
 
+# ~/.claude 等为指向 ${DATA_ROOT}/config/* 的符号链接时，默认 chown -R 不作用到挂载目录，node 无法 mkdir skills
+if [[ -n "${DATA_ROOT:-}" ]]; then
+  chown -R node:node \
+    "${DATA_ROOT}/config/claude" \
+    "${DATA_ROOT}/config/codex" \
+    "${DATA_ROOT}/config/agents" \
+    "${DATA_ROOT}/config/superpowers" \
+    "${DATA_ROOT}/project" 2>/dev/null || true
+fi
+
 log "starting cron..."
 safe_start_cron
 maybe_start_tailscale
@@ -408,10 +418,10 @@ install_superpowers_for_claude() {
     return
   fi
 
-  log "superpowers (Claude Code): claude plugin install superpowers@claude-plugins-official"
-  if ! run_with_timeout_as_node 300 "claude plugin install superpowers@claude-plugins-official --scope user"; then
-    log "WARN: superpowers Claude plugin install failed (network or CLI). Manual: claude plugin install superpowers@claude-plugins-official"
-  fi
+  # 上游 README：官方 market 可能尚未收录时，需先注册 obra/superpowers-marketplace 再装 superpowers@superpowers-marketplace
+  log "superpowers (Claude Code): marketplace add obra/superpowers-marketplace; install superpowers@superpowers-marketplace (fallback @claude-plugins-official)"
+  run_with_timeout_as_node 360 "claude plugin marketplace add obra/superpowers-marketplace || true; claude plugin install superpowers@superpowers-marketplace --scope user || claude plugin install superpowers@claude-plugins-official --scope user"
+  log "superpowers (Claude Code): plugin install step finished (see log above for marketplace/CLI errors)"
 }
 
 install_skills_and_extensions() {
