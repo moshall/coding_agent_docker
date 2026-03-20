@@ -224,11 +224,34 @@ docker compose pull && docker compose up -d
 
 **绑定挂载与权限**：`~/.claude`、`~/.agents` 等指向 `${DATA_ROOT}/config/...`。若在宿主机上预先创建了这些目录且属主为 **root**，早期镜像可能出现 **`EACCES`（无法创建 `~/.claude/plugins`、skills 安装失败）**。当前 `entrypoint` 会在启动时对 `${DATA_ROOT}/config/claude`、`codex`、`agents`、`superpowers` 及 **`project`** 执行 **`chown -R node:node`**（容器内 uid **1000**）。若你仍在使用旧镜像，可在宿主机执行一次 `chown -R 1000:1000 <DATA_ROOT>/config ...` 后重启容器，或 **`docker compose pull && docker compose up -d --force-recreate`** 拉到新构建。
 
-### 1Panel / `DATA_ROOT` 在 `/root/...` 下
+### 挂载前如何设权限（宿主机）
 
-面板常把应用数据放在 root 家目录下。Debian 系镜像里 **`/root` 默认 0700**，容器内用户 **`node`（uid 1000）无法进入**其子路径，CloudCLI、写 `DATA_ROOT` 会报权限错误。
+绑定卷是**把宿主机目录挂进容器**，进程在容器里多是以 **`node`（uid 1000）** 读写，因此应**先在宿主机**做好目录与属主，再 `docker compose up`：
 
-**兼容方式（已由 entrypoint 自动处理）**：若检测到 `DATA_ROOT` 以 `/root/` 开头，启动时（仍以 root 运行阶段）会对**容器内** `/root` 执行 **`chmod 0711`**：允许按路径进入子目录，但其它用户**不能** `ls /root`。无需你在宿主机上改 `/root` 权限；若编排使用只读根文件系统导致 `chmod` 失败，请把数据目录改到 `/data`、`/opt` 等，或按面板文档使用其推荐的挂载路径。
+1. **创建数据根目录**（与 compose / `.env` 里 `DATA_ROOT` 一致）：
+   ```bash
+   sudo mkdir -p /你的/DATA_ROOT路径
+   ```
+2. **把目录交给容器内的 node（推荐用数字 uid，避免宿主机没有 `node` 用户）**：
+   ```bash
+   sudo chown -R 1000:1000 /你的/DATA_ROOT路径
+   ```
+   若有**额外挂载**（例如 OpenClaw 与 `project/openclaw` 对齐），对**宿主机上那一侧路径**同样执行 `chown -R 1000:1000`。
+3. **再启动编排**：`docker compose up -d`（或在 1Panel 中创建/启动）。
+
+说明：镜像 `entrypoint` 里对 **`${DATA_ROOT}/config/*`** 等的 **`chown`** 作用在容器内看到的挂载点上，一般与在宿主机先 `chown 1000:1000` 一致；**若宿主机顽固为 root 且挂载已就绪**，仍以你在宿主机上的属主为准——故**先赋权再挂**最稳。
+
+### 1Panel / `DATA_ROOT` 在宿主机 `/root/...` 下
+
+面板有时把数据放在 **root 家目录**下。要点：
+
+- **宿主机**上 **`/root` 常见权限 0700**（仅 root 可进）。容器内 **`uid 1000` 无法穿过 `/root` 到达** `/root/apps/...` 之类的挂载点，会出现 **Permission denied**——这与镜像内是否执行 `chmod` **无关**，因为 **绑定挂载用的是宿主机文件系统的权限**。
+- **推荐**：把 `DATA_ROOT` 设到 **`/opt/...`、`/data/...`**（如 [deploy/1panel](./deploy/1panel/docker-compose.yml) 默认），按上一小节 **`mkdir` + `chown -R 1000:1000`** 后再挂。
+- **若必须放在宿主机 `/root/...`**（尽量不推荐）：
+  1. 仍对**数据目录本身**执行：`sudo chown -R 1000:1000 /root/你的数据路径`；
+  2. 并保证 **uid 1000 能沿路径进入**：通常需在**宿主机**对 `/root` 做一次（与常见加固一致）：`sudo chmod 0711 /root` —— 他人**不能列举** `/root` 下有什么，但**可进入已知的子路径**（请按你的安全策略评估后再操作）。
+
+**容器内**若 `DATA_ROOT` 以 `/root/` 开头，镜像仍会对**容器内** `/root` 做 **`chmod 0711`** 以兼容「数据在容器 root 家目录」的非挂载布局；**纯 bind mount 时以宿主机权限为主**，请按上面宿主机步骤处理。
 
 <details>
 <summary>展开：config / software 下常见子路径（自动创建，一般不必手改）</summary>
@@ -240,9 +263,28 @@ docker compose pull && docker compose up -d
 
 ## Deployment Examples
 
-### 1Panel
+### 1Panel 编排模板
 
-1Panel 使用方式与标准 Compose 相同（指定目录下的 `docker-compose.yml` + `.env`），无单独「商店 JSON 模板」。我们提供 **独立目录打包**（默认 `DATA_ROOT` 指向 `/opt/1panel/apps/...`、含 `version`/`name` 便于部分面板校验）：见 **[deploy/1panel/README.md](./deploy/1panel/README.md)**（内含 `docker-compose.yml`、`.env.example`）。
+1Panel **没有**单独的「应用商店 JSON 模板」，实际就是在指定目录放置 **`docker-compose.yml` + `.env`**，由面板调用 Docker Compose。
+
+本仓库提供一份 **面向 1Panel 的现成编排**（与根目录 `docker-compose.yml` 行为一致，但按面板常见坑做了适配）：
+
+| 文件 | 说明 |
+|------|------|
+| [deploy/1panel/docker-compose.yml](./deploy/1panel/docker-compose.yml) | 推荐使用。**`image` 为纯字符串**（面板预拉镜像不认 `${DOCKER_IMAGE}`）；**`container_name`、主数据卷、`ports` 为字面量**，避免变量未替换；默认数据目录 **`/opt/1panel/apps/coding_agent_docker`**；顶栏 **`name:`** 为 Compose 项目名；**不写 `version:`**，避免 Compose V2 提示 obsolete。 |
+| [deploy/1panel/.env.example](./deploy/1panel/.env.example) | 复制为同目录 `.env`，填写 API Key 等。 |
+| [deploy/1panel/README.md](./deploy/1panel/README.md) | 目录示例、OpenClaw 附加卷、`invalid reference format` 说明。 |
+
+**推荐操作顺序**：
+
+```text
+1. 宿主机：sudo mkdir -p /opt/1panel/apps/coding_agent_docker && sudo chown -R 1000:1000 /opt/1panel/apps/coding_agent_docker
+2. 将 deploy/1panel/docker-compose.yml、.env（由 .env.example 复制）放到同一目录，例如 /opt/1panel/docker/compose/coding-agent/
+3. 面板：容器 → Compose/编排 → 选择该目录创建
+4. 安全组放行 Web 端口（默认映射 3001 为 CloudCLI 等，见 yml 中 ports）
+```
+
+若需改数据路径或映射端口，请**直接编辑** `deploy/1panel/docker-compose.yml` 中对应行（仅改 `.env` 不会自动改 `volumes` / `ports` 字面量）。面板报错排障另见本文 **Troubleshooting** 中的 「1Panel（或类似面板）…」 小节。
 
 ### Compose Template
 
