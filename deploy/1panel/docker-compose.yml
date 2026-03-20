@@ -1,7 +1,7 @@
 # coding_agent_docker — 1Panel 专用（见 README.md）
 # 重要：1Panel「创建编排」拉取镜像时不会对 image 做 .env 替换，故 image 必须为纯字符串。
 # 若需固定其它版本，请直接改下方 image 行（勿用 ${DOCKER_IMAGE}）。
-version: "3.8"
+# 不写 version: — Compose V2 已弃用该字段，可减少面板日志里的 obsolete 提示。
 name: coding-agent
 
 services:
