@@ -291,14 +291,9 @@ if [[ -e /home/node/projects ]]; then
   chown -h node:node /home/node/projects 2>/dev/null || true
 fi
 
-# ~/.claude 等为指向 ${DATA_ROOT}/config/* 的符号链接时，默认 chown -R 不作用到挂载目录，node 无法 mkdir skills
+# ~/.claude、~/.ccman 等指向 ${DATA_ROOT}/config/* 时，chown -R 符号链接默认不作用到绑定挂载目标，node 会 EACCES
 if [[ -n "${DATA_ROOT:-}" ]]; then
-  chown -R node:node \
-    "${DATA_ROOT}/config/claude" \
-    "${DATA_ROOT}/config/codex" \
-    "${DATA_ROOT}/config/agents" \
-    "${DATA_ROOT}/config/superpowers" \
-    "${DATA_ROOT}/project" 2>/dev/null || true
+  chown -R node:node "${DATA_ROOT}/config" "${DATA_ROOT}/project" 2>/dev/null || true
 fi
 
 log "starting cron..."

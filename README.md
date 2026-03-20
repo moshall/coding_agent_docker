@@ -222,7 +222,7 @@ docker compose pull && docker compose up -d
 - `${DATA_ROOT}/user-init.sh` 若存在会在启动时执行。
 - 需要与**其它栈**共享某宿主机路径（例如自建 agent 的工作区）时，在 `docker-compose.yml` 里**自行**增加 `volumes` 即可；镜像不再提供 `MOUNT_OPENCLAW` 等专用变量。
 
-**绑定挂载与权限**：`~/.claude`、`~/.agents` 等指向 `${DATA_ROOT}/config/...`。若在宿主机上预先创建了这些目录且属主为 **root**，早期镜像可能出现 **`EACCES`（无法创建 `~/.claude/plugins`、skills 安装失败）**。当前 `entrypoint` 会在启动时对 `${DATA_ROOT}/config/claude`、`codex`、`agents`、`superpowers` 及 **`project`** 执行 **`chown -R node:node`**（容器内 uid **1000**）。若你仍在使用旧镜像，可在宿主机执行一次 `chown -R 1000:1000 <DATA_ROOT>/config ...` 后重启容器，或 **`docker compose pull && docker compose up -d --force-recreate`** 拉到新构建。
+**绑定挂载与权限**：`~/.claude`、`~/.ccman`、`~/.agents` 等指向 `${DATA_ROOT}/config/...`。若在宿主机上预先创建了这些目录且属主为 **root**，会出现 **`EACCES`**（如 `~/.claude/plugins`、`ccman` 写 `claude.json.tmp` 失败）。当前 `entrypoint` 会在启动时对 **`${DATA_ROOT}/config` 整目录** 与 **`project`** 执行 **`chown -R node:node`**（含 `config/ccman` 等，避免仅 chown 符号链接而未作用到挂载目标）。若你仍在使用旧镜像，可在宿主机执行 **`chown -R 1000:1000 <DATA_ROOT>/config <DATA_ROOT>/project`** 后重启容器，或 **`docker compose pull && docker compose up -d --force-recreate`**。
 
 ### 挂载前如何设权限（宿主机）
 
@@ -429,11 +429,11 @@ chmod +x scripts/verify-superpowers-claude-plugin.sh
 
 ### Use ccman
 
-`ccman` 已做包装优化，行为如下：
+`ccman` **仍有包装**（`/usr/local/bin/ccman` → `gosu node` 调用真实二进制），行为如下：
 
-- 即使你在 `root` shell 里执行 `ccman`，它也会自动切换为 `node` 用户运行。
-- 会自动固定 `NODE_ENV=production`，避免配置落到 `/tmp/ccman-dev`。
-- `ccman` 的配置会持久化到 `${DATA_ROOT}/config/ccman`。
+- 即使你在 **`root`** shell 里执行 `ccman`，也会以 **`node`** 身份运行（封装未移除）。
+- 自动固定 **`NODE_ENV=production`**，避免配置落到 `/tmp/ccman-dev`。
+- 配置持久化在 **`${DATA_ROOT}/config/ccman`**（`~/.ccman` 符号链接）。若仍报 **`EACCES`**，多为绑定挂载上该目录属主为 **root**：启动时 entrypoint 会对 **`${DATA_ROOT}/config` 整树 `chown node`**；请先 **`docker compose pull`** 更新镜像，或宿主机 **`chown -R 1000:1000`** 对应路径后 **`docker compose up -d --force-recreate`**。
 - 通过 `ccman` 写入的 Claude、Codex、Gemini、OpenCode、OpenClaw 配置都会落在对应持久化目录中。
 
 常用命令：
@@ -591,7 +591,7 @@ docker compose -f /path/to/docker-compose.yml exec -it coding-agent bash
 
 ### `npx skills` / Codex 技能安装报 `EACCES`
 
-与上类似：确保 **`${DATA_ROOT}/config/claude`**、**`config/agents`**、**`config/codex`** 对容器内 **uid 1000** 可写；推荐拉最新镜像或宿主机 `chown -R 1000:1000` 对应目录后重建容器。
+与上类似：确保整个 **`${DATA_ROOT}/config`**（含 `ccman`、`claude`、`agents` 等）对容器内 **uid 1000** 可写；推荐拉最新镜像或宿主机 **`chown -R 1000:1000 "${DATA_ROOT}/config"`** 后重建容器。
 
 ## Related Docs
 
