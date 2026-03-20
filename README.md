@@ -242,9 +242,9 @@ docker compose pull && docker compose up -d
 
 ### Compose Template
 
-**请以仓库根目录 [docker-compose.yml](./docker-compose.yml) 为准**：它与 [.env.example](./.env.example) 一致，通过 `environment` 逐项引用变量；在同一目录放置 `.env` 时，Compose 会自动用其做 **`${VAR}` 替换**（无需再写 `env_file`，以免与文档/CI 行为不一致）。
+下面内容与仓库根目录 [**docker-compose.yml**](./docker-compose.yml) **保持同一套编排**（维护时以仓库文件为唯一事实来源；此处方便「复制即用」）。
 
-若仅快速扫一眼结构，等价于（与仓库文件同步维护，节选）：
+**你需要自己提供的主要是密钥**：在同级目录创建 `.env`，至少填写要用的 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等（见 [.env.example](./.env.example)）。**其余项在下列模板里已全部列出**：带 `:-默认值` 的变量可不写 `.env`；未在 compose 里写默认的密钥/可选项在 `.env` 里留空即表示传入空字符串，镜像仍可按预期启动。
 
 ```yaml
 services:
@@ -252,21 +252,60 @@ services:
     image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
     container_name: ${CONTAINER_NAME:-coding-agent}
     restart: unless-stopped
+
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - NODE_ENV=${NODE_ENV:-development}
       - DATA_ROOT=${DATA_ROOT:-/data/coding-agent}
-      # …其余键名见仓库 docker-compose.yml（ANTHROPIC_*、OPENAI_*、CLOUDCLI_*、SUPERPOWERS_*、PORT_* 等）
+      - GOPATH=/home/node/go
+      - GOCACHE=/home/node/.cache/go-build
+      - INSTALL_GO_RUNTIME=${INSTALL_GO_RUNTIME:-}
+      - INSTALL_BUILD_ESSENTIAL=${INSTALL_BUILD_ESSENTIAL:-}
+
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - CODEX_MODEL=${CODEX_MODEL:-gpt-5-codex}
+
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - TASKMASTER_MAIN_PROVIDER=${TASKMASTER_MAIN_PROVIDER:-anthropic}
+      - TASKMASTER_MAIN_MODEL=${TASKMASTER_MAIN_MODEL:-claude-sonnet-4-20250514}
+      - TASKMASTER_RESEARCH_PROVIDER=${TASKMASTER_RESEARCH_PROVIDER}
+      - TASKMASTER_RESEARCH_MODEL=${TASKMASTER_RESEARCH_MODEL}
+      - TASKMASTER_FALLBACK_PROVIDER=${TASKMASTER_FALLBACK_PROVIDER}
+      - TASKMASTER_FALLBACK_MODEL=${TASKMASTER_FALLBACK_MODEL}
+
+      - GH_TOKEN=${GH_TOKEN}
+
+      - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TAILSCALE_HOSTNAME=${TAILSCALE_HOSTNAME:-coding-agent}
+
+      - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
+      - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
+
+      - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
+
     volumes:
+      # 仅挂载数据根目录；entrypoint 将 ~/.claude / .codex 等链到 ${DATA_ROOT}/config/* ，见 README
       - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
+
     ports:
       - "${PORT_CC_CONNECT:-8080}:8080"
       - "${PORT_RALPH:-3000}:3000"
       - "${PORT_CLOUDCLI:-3001}:${CLOUDCLI_PORT:-3001}"
       - "${PORT_DEV:-9000}:9000"
-    cap_add: [NET_ADMIN]
+
+    cap_add:
+      - NET_ADMIN
+
     devices:
       - /dev/net/tun:/dev/net/tun
+
     stdin_open: true
     tty: true
 ```
@@ -274,7 +313,7 @@ services:
 启动：
 
 ```bash
-cp .env.example .env   # 编辑密钥与 DATA_ROOT
+cp .env.example .env   # 填写 API Key 等；其余预设可按需保留或留空
 docker compose up -d
 ```
 

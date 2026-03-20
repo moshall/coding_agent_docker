@@ -1,3 +1,4 @@
+# 编排变更时请同步 README.md「Compose Template」中的对照代码块，避免文档与事实漂移。
 services:
   coding-agent:
     image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
