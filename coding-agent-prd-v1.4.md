@@ -7,7 +7,7 @@
 **最后更新**：2026-03-13  
 **变更说明**：全面重写。三层目录心智模型、标准 Compose bind mount（移除 --privileged/C2 方案）、user-init.sh 用户软件持久化钩子、MOUNT_OPENCLAW 命名挂载
 
-> 说明：本文档是 v1.4 阶段的历史 PRD，文中部分 Rust / Cargo 设计已不再代表当前实现。当前仓库版本已移除默认 Rust 自举与 `config/cargo` 持久化映射，请以 `README.md`、`docker-compose.yml`、`entrypoint.sh` 和 CI 配置为准。
+> 说明：本文档是 v1.4 阶段的历史 PRD，文中部分 Rust / Cargo 设计已不再代表当前实现。当前仓库版本已移除默认 Rust 自举与 `config/cargo` 持久化映射。**持久化**已改为：`docker-compose` **仅绑定一条** `${DATA_ROOT}`，容器内用符号链接落到 `project/`、`config/`、`software/` 三层；不再提供 `MOUNT_OPENCLAW` / `MOUNT_EXTRA_*`，额外目录由用户自行写 `volumes`。请以 `README.md`、`docker-compose.yml`、`entrypoint.sh` 和 CI 配置为准。
 
 ---
 
@@ -464,24 +464,24 @@ docker compose exec coding-agent tmux attach -t main  # 重新接入
 |------|------|
 | data-analyst pip 依赖 | `pip3 install pandas matplotlib seaborn scipy --break-system-packages` |
 | uipro-cli | `npm install -g uipro-cli` |
-| superpowers repo | `git clone --depth 1 https://github.com/obra/superpowers /home/node/.superpowers` |
-| openclaw skills repo | `git clone https://github.com/openclaw/skills /home/node/.openclaw-skills` |
+| superpowers repo | ~~build-time~~ 已迁至 Entrypoint 后台 `git clone` → `/home/node/.superpowers`（见卷 `config/superpowers`） |
 
 #### 🟡 Entrypoint（首次启动，幂等，自动）
 
 | Skill | 安装命令 | 生效范围 |
 |-------|----------|----------|
+| superpowers（Claude Code） | `claude plugin install superpowers@claude-plugins-official`（可 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false` 关闭） | 与 [superpowers README](https://github.com/obra/superpowers) 官方 Marketplace 一致 |
+| superpowers（Codex） | `ln -s ~/.superpowers ~/.codex/superpowers`；`mkdir -p ~/.agents/skills`；`ln -s ~/.codex/superpowers/skills ~/.agents/skills/superpowers` | 与 [.codex/INSTALL.md](https://github.com/obra/superpowers/blob/main/.codex/INSTALL.md) 一致 |
 | planning-with-files | `npx skills add OthmanAdi/planning-with-files --all -y` | Claude Code / Codex / Gemini / OpenCode |
-| data-analyst | cp from `~/.openclaw-skills/` | Claude Code / Codex |
 | oil-oil/codex | `npx skills add oil-oil/codex -a claude-code -y` | Claude Code 专属 |
-| ui-ux-pro-max（非 Claude 端） | `uipro init --ai codex --offline && uipro init --ai gemini --offline` | Codex / Gemini / OpenCode |
+| ui-ux-pro-max（非 Claude 端） | `uipro init --ai codex --offline`（当前镜像未预装 gemini-cli/opencode） | Codex |
 
 #### 🔴 手动一次（进容器执行，volume 持久化后永久有效）
 
 | Skill | 工具 | 安装命令 |
 |-------|------|----------|
-| superpowers | Claude Code | `/plugin marketplace add obra/superpowers-marketplace` → `/plugin install superpowers@superpowers-marketplace` |
-| superpowers | Codex | session 内告知 agent fetch `.codex/INSTALL.md` |
+| superpowers | Claude Code | 官方推荐：`claude plugin install superpowers@claude-plugins-official`；或 `/plugin marketplace add obra/superpowers-marketplace` → `/plugin install superpowers@superpowers-marketplace` |
+| superpowers | Codex | 已由 Entrypoint 按 `INSTALL.md` 建链；若异常可手动 fetch <https://raw.githubusercontent.com/obra/superpowers/main/.codex/INSTALL.md> |
 | superpowers | OpenCode | session 内告知 agent fetch `.opencode/INSTALL.md` |
 | superpowers | Gemini | `gemini extensions install https://github.com/obra/superpowers` |
 | qiaomu-design-advisor | Claude Code | 确认 marketplace 名称后 `/plugin install` |

@@ -11,5 +11,6 @@ run_check "TC-VERSION-05 Dockerfile accepts build version arg" grep -Fq 'ARG BUI
 run_check "TC-VERSION-06 Dockerfile writes OCI version label" grep -Fq 'org.opencontainers.image.version="${BUILD_VERSION}"' Dockerfile
 run_check "TC-VERSION-07 Dockerfile exports runtime version env" grep -Fq 'CODING_AGENT_VERSION="${BUILD_VERSION}"' Dockerfile
 run_check "TC-VERSION-08 README documents version tags" grep -Fq '`vX.Y.Z`' README.md
+run_check "TC-VERSION-09 Dockerfile exports BOM path env" grep -Fq 'CODING_AGENT_BOM_PATH=/usr/share/doc/coding-agent/bom.json' Dockerfile
 
 summary_and_exit

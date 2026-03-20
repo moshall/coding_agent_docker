@@ -84,11 +84,11 @@ jobs:
           TASKMASTER_MAIN_MODEL=claude-sonnet-4-20250514
           PORT_CC_CONNECT=8080
           PORT_RALPH=3000
+          PORT_CLOUDCLI=3001
           PORT_DEV=9000
-          MOUNT_OPENCLAW=
-          MOUNT_EXTRA_1=
-          MOUNT_EXTRA_2=
-          MOUNT_EXTRA_3=
+          CLOUDCLI_ENABLE=true
+          CLOUDCLI_PORT=3001
+          SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false
           DOCKER_IMAGE=coding-agent:dev
           BUILD_VERSION=${{ steps.tags.outputs.build_version }}
           BUILD_DATE=${{ steps.tags.outputs.build_date }}
@@ -180,9 +180,9 @@ jobs:
 
           check "claude CLI" "docker exec coding-agent sh -lc 'claude --version'"
           check "codex CLI" "docker exec coding-agent sh -lc 'codex --version'"
-          check "gemini CLI (node clean)" "docker exec -u node coding-agent sh -lc 'gemini --version 2>&1 | tee /tmp/gemini-v.log >/dev/null; ! grep -q \"Failed to save project registry\" /tmp/gemini-v.log; ! grep -q \"unexpected critical error\" /tmp/gemini-v.log; grep -E \"^[0-9]+\\.[0-9]+\\.[0-9]+\" /tmp/gemini-v.log >/dev/null'"
-          check "opencode CLI" "docker exec coding-agent sh -lc 'opencode --version'"
           check "task-master CLI" "docker exec coding-agent sh -lc 'task-master --version'"
+          check "cloudcli version" "docker exec coding-agent sh -lc 'cloudcli version'"
+          check "cloudcli HTTP" "docker exec coding-agent sh -lc 'i=0; until curl -fsS \"http://127.0.0.1:3001/\" >/dev/null 2>&1; do i=\$((i+1)); [ \"\$i\" -lt 30 ] || exit 1; sleep 1; done'"
           check "ccman CLI not dev mode" "docker exec coding-agent sh -lc 'ccman --version 2>&1 | tee /tmp/ccman-v.log >/dev/null; ! grep -q \"\\[开发模式\\]\" /tmp/ccman-v.log; grep -E \"^[0-9]+\\.[0-9]+\\.[0-9]+\" /tmp/ccman-v.log >/dev/null'"
           check "cc-connect real binary" "docker exec coding-agent sh -lc 'cc-connect --help 2>&1 | tee /tmp/cc-connect-help.log >/dev/null; ! grep -q \"fallback build\" /tmp/cc-connect-help.log; grep -q \"Usage:\" /tmp/cc-connect-help.log'"
           check "gh CLI" "docker exec coding-agent sh -lc 'gh --version'"
@@ -202,8 +202,10 @@ jobs:
           check "user-init executed" "docker exec coding-agent test -f /tmp/user-init-ran"
           check "user-init log persisted" "docker exec coding-agent grep -q 'user-init-ran' /tmp/user-init-ran.log"
           check "background skill log exists" "docker exec coding-agent test -f /var/log/entrypoint-skills.log"
-          check "host->container persistence" "sudo mkdir -p '${GITHUB_WORKSPACE}/.ci-data/projects' && echo host-\$(date +%s) | sudo tee '${GITHUB_WORKSPACE}/.ci-data/projects/host-sync.txt' >/dev/null && docker exec coding-agent sh -lc 'cat /home/node/projects/host-sync.txt' | grep -q '^host-'"
-          check "container->host persistence" "docker exec coding-agent sh -lc 'echo container-\$(date +%s) > /home/node/projects/container-sync.txt' && grep -q '^container-' '${GITHUB_WORKSPACE}/.ci-data/projects/container-sync.txt'"
+          check "image BOM json" "docker exec coding-agent test -f /usr/share/doc/coding-agent/bom.json"
+          check "image BOM has build metadata" "docker exec coding-agent grep -q coding_agent_version /usr/share/doc/coding-agent/bom.json"
+          check "host->container persistence" "sudo mkdir -p '${GITHUB_WORKSPACE}/.ci-data/project' && echo host-\$(date +%s) | sudo tee '${GITHUB_WORKSPACE}/.ci-data/project/host-sync.txt' >/dev/null && docker exec coding-agent sh -lc 'cat /home/node/project/host-sync.txt' | grep -q '^host-'"
+          check "container->host persistence" "docker exec coding-agent sh -lc 'echo container-\$(date +%s) > /home/node/project/container-sync.txt' && grep -q '^container-' '${GITHUB_WORKSPACE}/.ci-data/project/container-sync.txt'"
           check "task-master help as node" "docker exec -u node coding-agent bash -c 'task-master --help >/dev/null'"
 
           echo "SUMMARY PASS=$pass FAIL=$fail SKIP=$skip"

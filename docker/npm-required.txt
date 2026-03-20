@@ -1,0 +1,8 @@
+# Pinned npm globals — bump intentionally when releasing a new image baseline.
+# Format: package[@scope/...]@version
+@anthropic-ai/claude-code@2.1.80
+@openai/codex@0.116.0
+task-master-ai@0.43.0
+ccman@3.3.23
+uipro-cli@2.2.3
+@siteboon/claude-code-ui@1.25.2

@@ -1,0 +1,2 @@
+# Optional: failure does not fail the image build.
+@ralph-orchestrator/ralph-cli@2.8.1

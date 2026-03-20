@@ -8,7 +8,7 @@ if [[ "$(id -u)" != "0" ]]; then
 fi
 
 DATA_ROOT="${DATA_ROOT:-/data/coding-agent}"
-BOOTSTRAP_ROOT="${DATA_ROOT}/config/bootstrap"
+BOOTSTRAP_ROOT="${DATA_ROOT}/software/bootstrap"
 GO_MARKER="${BOOTSTRAP_ROOT}/install-go-runtime"
 BUILD_ESSENTIAL_MARKER="${BOOTSTRAP_ROOT}/install-build-essential"
 
@@ -115,40 +115,170 @@ ensure_runtime_packages() {
   rm -rf /var/lib/apt/lists/*
 }
 
-mkdir -p \
-  /home/node/.ccman \
-  /home/node/.claude \
-  /home/node/.codex \
-  /home/node/.gemini \
-  /home/node/.config/gemini \
-  /home/node/.config/opencode \
-  /home/node/.openclaw \
-  /home/node/.task-master \
-  /home/node/.config/gh \
-  /var/lib/tailscale \
-  /home/node/go \
-  /home/node/.cache/go-build \
-  /var/spool/cron/crontabs \
-  /home/node/projects
+# Host layout (single ${DATA_ROOT} mount):
+#   project/   — 工作区（容器内 ~/project，并兼容 ~/projects -> ~/project）
+#   config/    — 各工具配置子目录（claude、codedex、…）
+#   software/  — 运行时与缓存（tailscale、go、cron、go-build-cache、bootstrap）
+ensure_ln_home() {
+  local link_path="$1"
+  local data_path="$2"
 
-# Optional mounts may point to /dev/null (file placeholder). Avoid mkdir failures.
-for opt_mount in /home/node/openclaw /home/node/workspace-1 /home/node/workspace-2 /home/node/workspace-3; do
-  if [[ -e "${opt_mount}" && ! -d "${opt_mount}" ]]; then
-    log "optional mount ${opt_mount} is a file placeholder, skipping directory init"
-  else
-    mkdir -p "${opt_mount}"
+  mkdir -p "${data_path}"
+
+  if [[ -L "${link_path}" ]]; then
+    local cur
+    cur="$(readlink -f "${link_path}" 2>/dev/null || true)"
+    if [[ "${cur}" == "$(readlink -f "${data_path}" 2>/dev/null || echo "${data_path}")" ]]; then
+      return
+    fi
+    rm -f "${link_path}"
+  elif [[ -d "${link_path}" ]]; then
+    if [[ -z "$(ls -A "${link_path}" 2>/dev/null)" ]]; then
+      rmdir "${link_path}" 2>/dev/null || true
+    else
+      log "WARN: ${link_path} is non-empty; not replacing with symlink -> ${data_path}"
+      return
+    fi
+  elif [[ -e "${link_path}" ]]; then
+    log "WARN: ${link_path} exists; skip symlink -> ${data_path}"
+    return
   fi
-done
 
-# Keep ownership fixes targeted to startup-critical paths.
+  ln -sfn "${data_path}" "${link_path}"
+}
+
+# 1Panel / 习惯把卷放在 root 家目录下时，镜像内 /root 常为 0700，uid 1000 的 node 无法进入子路径。
+# 将 /root 设为 0711：其它用户可进入已知子路径，但不能列举 /root 下内容（常见加固做法）。
+ensure_data_root_traversable_for_node() {
+  if [[ "${DATA_ROOT:-}" != /root/* ]]; then
+    return
+  fi
+  if [[ ! -d /root ]]; then
+    return
+  fi
+  log "DATA_ROOT under /root: chmod 0711 /root (1Panel / root-home layout; node must traverse)"
+  if ! chmod 0711 /root; then
+    log "WARN: chmod 0711 /root failed — move DATA_ROOT outside /root or fix permissions on the host"
+  fi
+}
+
+link_persistence_from_data_root() {
+  log "DATA_ROOT layout: ${DATA_ROOT}/{project,config,software}/ ..."
+
+  if [[ -d "${DATA_ROOT}/config/bootstrap" ]] && [[ ! -d "${DATA_ROOT}/software/bootstrap" ]]; then
+    mkdir -p "${DATA_ROOT}/software/bootstrap"
+    shopt -s nullglob
+    for f in "${DATA_ROOT}/config/bootstrap"/*; do
+      [[ -e "${f}" ]] || continue
+      mv "${f}" "${DATA_ROOT}/software/bootstrap/" 2>/dev/null || true
+    done
+    shopt -u nullglob
+    rmdir "${DATA_ROOT}/config/bootstrap" 2>/dev/null || true
+  fi
+
+  mkdir -p \
+    "${DATA_ROOT}/project" \
+    "${DATA_ROOT}/config/claude" \
+    "${DATA_ROOT}/config/codex" \
+    "${DATA_ROOT}/config/superpowers" \
+    "${DATA_ROOT}/config/ccman" \
+    "${DATA_ROOT}/config/gemini" \
+    "${DATA_ROOT}/config/gemini-home" \
+    "${DATA_ROOT}/config/opencode" \
+    "${DATA_ROOT}/config/taskmaster" \
+    "${DATA_ROOT}/config/gh" \
+    "${DATA_ROOT}/config/agents" \
+    "${DATA_ROOT}/software/tailscale" \
+    "${DATA_ROOT}/software/go" \
+    "${DATA_ROOT}/software/go-build-cache" \
+    "${DATA_ROOT}/software/cron/crontabs" \
+    "${DATA_ROOT}/software/bootstrap"
+
+  if [[ -d "${DATA_ROOT}/projects" && ! -e "${DATA_ROOT}/project" ]]; then
+    log "legacy: ${DATA_ROOT}/project -> projects"
+    ln -sfn "${DATA_ROOT}/projects" "${DATA_ROOT}/project"
+  fi
+
+  ensure_ln_home "/home/node/.claude" "${DATA_ROOT}/config/claude"
+  ensure_ln_home "/home/node/.codex" "${DATA_ROOT}/config/codex"
+  ensure_ln_home "/home/node/.superpowers" "${DATA_ROOT}/config/superpowers"
+  ensure_ln_home "/home/node/.ccman" "${DATA_ROOT}/config/ccman"
+  mkdir -p /home/node/.config
+  ensure_ln_home "/home/node/.config/gemini" "${DATA_ROOT}/config/gemini"
+  ensure_ln_home "/home/node/.gemini" "${DATA_ROOT}/config/gemini-home"
+  ensure_ln_home "/home/node/.config/opencode" "${DATA_ROOT}/config/opencode"
+  ensure_ln_home "/home/node/.task-master" "${DATA_ROOT}/config/taskmaster"
+  ensure_ln_home "/home/node/.config/gh" "${DATA_ROOT}/config/gh"
+  ensure_ln_home "/home/node/.agents" "${DATA_ROOT}/config/agents"
+
+  ensure_ln_home "/home/node/go" "${DATA_ROOT}/software/go"
+  mkdir -p /home/node/.cache
+  ensure_ln_home "/home/node/.cache/go-build" "${DATA_ROOT}/software/go-build-cache"
+
+  ensure_ln_home "/var/lib/tailscale" "${DATA_ROOT}/software/tailscale"
+  ensure_ln_home "/var/spool/cron/crontabs" "${DATA_ROOT}/software/cron/crontabs"
+
+  ensure_ln_home "/home/node/project" "${DATA_ROOT}/project"
+  ensure_ln_home "/home/node/projects" "/home/node/project"
+
+}
+
+maybe_start_cloudcli() {
+  if ! is_truthy "${CLOUDCLI_ENABLE:-true}"; then
+    log "CloudCLI disabled (CLOUDCLI_ENABLE), skipping"
+    return
+  fi
+  if ! command -v cloudcli >/dev/null 2>&1; then
+    log "cloudcli not found, skipping"
+    return
+  fi
+
+  # CloudCLI uses Node fs.mkdir on ~/.config/cloudcli; a symlink there can yield EACCES (Node 22).
+  # Use only real directories under ${DATA_ROOT}/software/cloudcli-xdg.
+  local cli_xdg="${DATA_ROOT}/software/cloudcli-xdg"
+  local cli_state="${cli_xdg}/cloudcli"
+  mkdir -p "${cli_xdg}" "${cli_state}"
+
+  if [[ -d "${DATA_ROOT}/config/cloudcli" ]] && [[ -n "$(ls -A "${DATA_ROOT}/config/cloudcli" 2>/dev/null)" ]]; then
+    if [[ ! -f "${cli_state}/auth.db" ]] && [[ -z "$(ls -A "${cli_state}" 2>/dev/null)" ]]; then
+      log "migrating CloudCLI: ${DATA_ROOT}/config/cloudcli -> ${cli_state}"
+      cp -a "${DATA_ROOT}/config/cloudcli/." "${cli_state}/" 2>/dev/null || true
+    fi
+  fi
+
+  chown -R node:node "${cli_xdg}"
+
+  local port="${CLOUDCLI_PORT:-3001}"
+  log "starting CloudCLI (claudecodeui) on 0.0.0.0:${port} (log: /var/log/cloudcli.log)..."
+  nohup gosu node env \
+    HOME=/home/node \
+    USER=node \
+    LOGNAME=node \
+    XDG_CONFIG_HOME="${cli_xdg}" \
+    NODE_ENV="${NODE_ENV:-production}" \
+    SERVER_PORT="${port}" \
+    HOST=0.0.0.0 \
+    DATABASE_PATH="${cli_state}/auth.db" \
+    cloudcli >>/var/log/cloudcli.log 2>&1 &
+  sleep 1
+}
+
+ensure_data_root_traversable_for_node
+link_persistence_from_data_root
+
+mkdir -p /home/node/.agents/skills
+
+# Own persisted trees (follows symlinks into ${DATA_ROOT})
 for owned_dir in \
   /home/node/.ccman \
   /home/node/.claude \
   /home/node/.codex \
+  /home/node/.superpowers \
+  /home/node/.agents \
   /home/node/.gemini \
   /home/node/.config \
-  /home/node/.openclaw \
   /home/node/.task-master \
+  /home/node/project \
   /home/node/go \
   /home/node/.cache \
   /var/spool/cron/crontabs; do
@@ -157,12 +287,9 @@ for owned_dir in \
   fi
 done
 
-# Avoid recursively touching potentially large mounted workspaces.
-for mount_root in /home/node/projects /home/node/openclaw /home/node/workspace-1 /home/node/workspace-2 /home/node/workspace-3; do
-  if [[ -e "${mount_root}" ]]; then
-    chown node:node "${mount_root}" || true
-  fi
-done
+if [[ -e /home/node/projects ]]; then
+  chown -h node:node /home/node/projects 2>/dev/null || true
+fi
 
 log "starting cron..."
 safe_start_cron
@@ -253,21 +380,49 @@ if [[ ! -f "${TASKMASTER_ENV}" ]]; then
   log "generated: ${TASKMASTER_ENV}"
 fi
 
+maybe_start_cloudcli
+
+# Superpowers — Codex: https://github.com/obra/superpowers/blob/main/.codex/INSTALL.md
+install_superpowers_for_codex() {
+  local root="/home/node/.superpowers"
+  if [[ ! -d "${root}/skills" ]]; then
+    log "superpowers ${root}/skills missing, skip Codex install layout"
+    return
+  fi
+
+  log "superpowers (Codex): ln -s ${root} ~/.codex/superpowers && ln -s .../skills ~/.agents/skills/superpowers"
+  ln -sfn "${root}" /home/node/.codex/superpowers
+  mkdir -p /home/node/.agents/skills
+  ln -sfn /home/node/.codex/superpowers/skills /home/node/.agents/skills/superpowers
+  chown -h node:node /home/node/.codex/superpowers /home/node/.agents/skills/superpowers 2>/dev/null || true
+}
+
+# Superpowers — Claude Code: https://github.com/obra/superpowers#claude-code-official-marketplace
+install_superpowers_for_claude() {
+  if ! is_truthy "${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}"; then
+    log "SUPERPOWERS_CLAUDE_PLUGIN_ENABLE disabled, skip claude plugin install"
+    return
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    log "claude CLI not found, skip superpowers plugin install"
+    return
+  fi
+
+  log "superpowers (Claude Code): claude plugin install superpowers@claude-plugins-official"
+  if ! run_with_timeout_as_node 300 "claude plugin install superpowers@claude-plugins-official --scope user"; then
+    log "WARN: superpowers Claude plugin install failed (network or CLI). Manual: claude plugin install superpowers@claude-plugins-official"
+  fi
+}
+
 install_skills_and_extensions() {
   sync_repo_as_node "https://github.com/obra/superpowers" "/home/node/.superpowers" "superpowers"
-  sync_repo_as_node "https://github.com/openclaw/skills" "/home/node/.openclaw-skills" "openclaw skills" 240
+
+  install_superpowers_for_codex
+  install_superpowers_for_claude
 
   if [[ ! -d "/home/node/.claude/skills/planning-with-files" ]]; then
     log "installing planning-with-files skill..."
     run_with_timeout_as_node 180 "npx -y skills add OthmanAdi/planning-with-files --all -y"
-  fi
-
-  if [[ ! -d "/home/node/.claude/skills/data-analyst" ]] && [[ -d "/home/node/.openclaw-skills/data-analyst" ]]; then
-    log "installing data-analyst skill..."
-    mkdir -p /home/node/.claude/skills /home/node/.codex/skills
-    cp -r /home/node/.openclaw-skills/data-analyst /home/node/.claude/skills/
-    cp -r /home/node/.openclaw-skills/data-analyst /home/node/.codex/skills/
-    chown -R node:node /home/node/.claude/skills/data-analyst /home/node/.codex/skills/data-analyst
   fi
 
   if [[ ! -d "/home/node/.claude/skills/codex" ]]; then
@@ -276,10 +431,8 @@ install_skills_and_extensions() {
   fi
 
   if [[ ! -d "/home/node/.codex/extensions/ui-ux-pro-max" ]]; then
-    log "installing ui-ux-pro-max for non-Claude tools..."
+    log "installing ui-ux-pro-max for Codex..."
     run_with_timeout_as_node 45 "uipro init --ai codex --offline"
-    run_with_timeout_as_node 45 "uipro init --ai gemini --offline"
-    run_with_timeout_as_node 45 "uipro init --ai opencode --offline"
   fi
 }
 

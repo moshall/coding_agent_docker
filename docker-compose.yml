@@ -36,32 +36,19 @@ services:
       - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
       - TAILSCALE_HOSTNAME=${TAILSCALE_HOSTNAME:-coding-agent}
 
+      - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
+      - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
+
+      - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
+
     volumes:
+      # 仅挂载数据根目录；entrypoint 将 ~/ .claude / .codex 等链到 ${DATA_ROOT}/config/* ，见 README
       - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
-      - ${DATA_ROOT:-/data/coding-agent}/config/claude:/home/node/.claude
-      - ${DATA_ROOT:-/data/coding-agent}/config/codex:/home/node/.codex
-      - ${DATA_ROOT:-/data/coding-agent}/config/ccman:/home/node/.ccman
-      - ${DATA_ROOT:-/data/coding-agent}/config/gemini:/home/node/.config/gemini
-      - ${DATA_ROOT:-/data/coding-agent}/config/gemini-home:/home/node/.gemini
-      - ${DATA_ROOT:-/data/coding-agent}/config/opencode:/home/node/.config/opencode
-      - ${DATA_ROOT:-/data/coding-agent}/config/openclaw-home:/home/node/.openclaw
-      - ${DATA_ROOT:-/data/coding-agent}/config/taskmaster:/home/node/.task-master
-      - ${DATA_ROOT:-/data/coding-agent}/config/gh:/home/node/.config/gh
-      - ${DATA_ROOT:-/data/coding-agent}/config/tailscale:/var/lib/tailscale
-      - ${DATA_ROOT:-/data/coding-agent}/config/go:/home/node/go
-      - ${DATA_ROOT:-/data/coding-agent}/config/go-build-cache:/home/node/.cache/go-build
-      - ${DATA_ROOT:-/data/coding-agent}/cron/crontabs:/var/spool/cron/crontabs
-
-      - ${DATA_ROOT:-/data/coding-agent}/projects:/home/node/projects
-
-      - ${MOUNT_OPENCLAW:-/dev/null}:/home/node/openclaw
-      - ${MOUNT_EXTRA_1:-/dev/null}:/home/node/workspace-1
-      - ${MOUNT_EXTRA_2:-/dev/null}:/home/node/workspace-2
-      - ${MOUNT_EXTRA_3:-/dev/null}:/home/node/workspace-3
 
     ports:
       - "${PORT_CC_CONNECT:-8080}:8080"
       - "${PORT_RALPH:-3000}:3000"
+      - "${PORT_CLOUDCLI:-3001}:${CLOUDCLI_PORT:-3001}"
       - "${PORT_DEV:-9000}:9000"
 
     cap_add:

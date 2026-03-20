@@ -55,7 +55,8 @@
 
 | 类别 | 内容 | 说明 |
 | --- | --- | --- |
-| AI CLI | `claude-code`、`codex`、`gemini-cli`、`opencode`、`task-master` | 镜像内预装 |
+| AI CLI | `claude-code`、`codex`、`task-master` | 镜像内预装；`gemini-cli` / `opencode-ai` 未预装以控制体积，可按需 `npm i -g` |
+| Web UI | [CloudCLI](https://github.com/siteboon/claudecodeui)（`cloudcli` / `@siteboon/claude-code-ui`） | 默认监听 `0.0.0.0:3001`，与现有 `~/.claude` 会话/配置同源；许可为 **GPL-3.0**（见上游仓库） |
 | 配置工具 | `ccman` | 已做包装，自动以 `node` 用户 + `NODE_ENV=production` 运行 |
 | 连接/桥接 | `cc-connect` | 构建阶段编译真实二进制，并在 CI 中校验 |
 | 开发运维 | `git`、`gh`、`tmux`、`cron`、`curl`、`wget` | 便于长期驻留和日常操作 |
@@ -72,20 +73,20 @@
 - 根据环境变量生成 Claude、Codex、Gemini、Task Master 的基础配置。
 - 为 Gemini 预置项目注册表，避免首次运行时的 registry 报错。
 - 按需安装 `golang` 和 `build-essential`，并把这个选择持久化。
+- 默认启动 **CloudCLI**（可用 `CLOUDCLI_ENABLE=false` 关闭），便于浏览器远程使用 Claude Code / Codex 等会话。
 - 后台安装 skills/extensions，不阻塞主终端。
 - 如存在 `${DATA_ROOT}/user-init.sh`，则在启动时执行。
 - 最终把主进程切换为 `node` 用户。
 
 ### Bundled Skills and Extensions
 
-镜像会按幂等方式初始化以下内容：
+镜像会按幂等方式初始化以下内容（详见 [obra/superpowers](https://github.com/obra/superpowers)）：
 
-- `planning-with-files`
-- `data-analyst`
-- `oil-oil/codex`
-- `uipro init --offline` 相关扩展初始化
+- **Superpowers — Claude Code**：首次后台执行 `claude plugin install superpowers@claude-plugins-official`（可用 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=false` 关闭；需出网）。
+- **Superpowers — Codex**：与官方 [.codex/INSTALL.md](https://github.com/obra/superpowers/blob/main/.codex/INSTALL.md) 一致——`~/.superpowers` 的克隆同步 **`ln -s` → `~/.codex/superpowers`**，再 **`~/.agents/skills/superpowers` → .../skills**（Codex 通过 `~/.agents/skills` 发现 skill）。
+- `planning-with-files`、`oil-oil/codex`、`uipro init --ai codex --offline`（Codex 端 ui-ux-pro-max）。
 
-说明：这部分在后台执行，日志位于 `/var/log/entrypoint-skills.log`。
+说明：后台日志 `/var/log/entrypoint-skills.log`。镜像**不再**克隆 `openclaw/skills` 等第三方 skill 归档；需要额外 skill 请在容器内自行 `npx skills add ...` 或挂载自带目录。
 
 ## Quick Start
 
@@ -139,9 +140,11 @@ docker exec -it --user node -e NODE_ENV=production coding-agent bash
 ```bash
 claude --version
 codex --version
-gemini --version
 task-master --version
 ccman --version
+# 若自行全局安装：gemini --version / opencode --version
+cloudcli version
+# 浏览器访问（宿主机映射默认 3001）：http://<主机>:3001
 ```
 
 ## Configuration
@@ -157,8 +160,10 @@ ccman --version
 | 可选代理/网关 | `ANTHROPIC_BASE_URL`、`OPENAI_BASE_URL` | 使用代理或兼容网关时填写 |
 | Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
 | 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
+| CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
+| Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE` | Claude 侧官方插件安装；Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
 | 可选运行时增强 | `INSTALL_GO_RUNTIME`、`INSTALL_BUILD_ESSENTIAL` | 留空表示关闭，设为 `true` 表示启动时安装，并将选择持久化 |
-| 可选额外挂载 | `MOUNT_OPENCLAW`、`MOUNT_EXTRA_1/2/3` | 用于挂载外部工作区或资源目录 |
+| 用户自定义挂载 | 自行编辑 `docker-compose.yml` 的 `volumes` | 例如与宿主机其它项目目录同路径挂载，镜像不提供 OpenClaw 专用变量 |
 
 ### Optional Runtime Package Switches
 
@@ -170,8 +175,8 @@ ccman --version
 
 需要特别注意的是，这两个开关带“持久化记忆”：
 
-- 一旦开启过，启动脚本会写入 `${DATA_ROOT}/config/bootstrap/install-go-runtime`
-- 或 `${DATA_ROOT}/config/bootstrap/install-build-essential`
+- 一旦开启过，启动脚本会写入 `${DATA_ROOT}/software/bootstrap/install-go-runtime`
+- 或 `${DATA_ROOT}/software/bootstrap/install-build-essential`
 
 之后即使你把环境变量改回留空，容器仍可能继续安装，因为 marker 文件还在。
 
@@ -192,37 +197,32 @@ ccman --version
 
 这个镜像不是“每次重建都从零开始”的一次性容器，而是带明确持久化设计的工作容器。
 
-### Three Layers
+**Compose 里只需要挂一条数据根目录**（默认 `${DATA_ROOT:-/data/coding-agent}` 对应到容器内同一路径）。`entrypoint.sh` 在启动时把 `~/.claude`、`~/.codex`、`~/project` 等链接到该根下的子目录，无需为每个工具单独写 `volumes`。
 
-| 层级 | 主机侧 | 容器侧 | 作用 |
-| --- | --- | --- | --- |
-| Layer 1 | `${DATA_ROOT}/config/*` | 各工具配置目录 | 持久化授权、配置、缓存和工具状态 |
-| Layer 2 | `${DATA_ROOT}/projects` | `/home/node/projects` | 持久化项目源码和工作区 |
-| Layer 3 | `MOUNT_OPENCLAW`、`MOUNT_EXTRA_*` | `/home/node/openclaw`、`/home/node/workspace-*` | 可选外部挂载 |
+### 三层目录（心智模型）
 
-额外约定：
+| 目录 | 作用 |
+| --- | --- |
+| `${DATA_ROOT}/project/` | 默认代码与工作区；容器内 `/home/node/project`。若你过去用了 `projects/`，首次启动会自动做兼容（`project` → `projects`） |
+| `${DATA_ROOT}/config/` | 各工具配置与状态（`.claude`、`.codex`、Task Master、CloudCLI、`~/.agents` 等，由脚本链入 `$HOME`） |
+| `${DATA_ROOT}/software/` | 运行时数据：Tailscale 状态、`GOPATH`、`go-build` 缓存、cron、`software/bootstrap` 安装标记等 |
 
-- `${DATA_ROOT}/config/bootstrap/*` 用来记录是否启用了 `golang` / `build-essential` 的运行时安装。
-- `${DATA_ROOT}/user-init.sh` 可作为用户自定义启动脚本。
-- `${DATA_ROOT}` 根目录本身会映射到容器内同路径，便于脚本和附加资源直接访问。
+其它约定：
+
+- `${DATA_ROOT}/user-init.sh` 若存在会在启动时执行。
+- 需要与**其它栈**共享某宿主机路径（例如自建 agent 的工作区）时，在 `docker-compose.yml` 里**自行**增加 `volumes` 即可；镜像不再提供 `MOUNT_OPENCLAW` 等专用变量。
+
+### 1Panel / `DATA_ROOT` 在 `/root/...` 下
+
+面板常把应用数据放在 root 家目录下。Debian 系镜像里 **`/root` 默认 0700**，容器内用户 **`node`（uid 1000）无法进入**其子路径，CloudCLI、写 `DATA_ROOT` 会报权限错误。
+
+**兼容方式（已由 entrypoint 自动处理）**：若检测到 `DATA_ROOT` 以 `/root/` 开头，启动时（仍以 root 运行阶段）会对**容器内** `/root` 执行 **`chmod 0711`**：允许按路径进入子目录，但其它用户**不能** `ls /root`。无需你在宿主机上改 `/root` 权限；若编排使用只读根文件系统导致 `chmod` 失败，请把数据目录改到 `/data`、`/opt` 等，或按面板文档使用其推荐的挂载路径。
 
 <details>
-<summary>展开查看主要持久化目录映射</summary>
+<summary>展开：config / software 下常见子路径（自动创建，一般不必手改）</summary>
 
-- `${DATA_ROOT}/config/claude` -> `/home/node/.claude`
-- `${DATA_ROOT}/config/codex` -> `/home/node/.codex`
-- `${DATA_ROOT}/config/ccman` -> `/home/node/.ccman`
-- `${DATA_ROOT}/config/gemini` -> `/home/node/.config/gemini`
-- `${DATA_ROOT}/config/gemini-home` -> `/home/node/.gemini`
-- `${DATA_ROOT}/config/opencode` -> `/home/node/.config/opencode`
-- `${DATA_ROOT}/config/openclaw-home` -> `/home/node/.openclaw`
-- `${DATA_ROOT}/config/taskmaster` -> `/home/node/.task-master`
-- `${DATA_ROOT}/config/gh` -> `/home/node/.config/gh`
-- `${DATA_ROOT}/config/tailscale` -> `/var/lib/tailscale`
-- `${DATA_ROOT}/config/go` -> `/home/node/go`
-- `${DATA_ROOT}/config/go-build-cache` -> `/home/node/.cache/go-build`
-- `${DATA_ROOT}/cron/crontabs` -> `/var/spool/cron/crontabs`
-- `${DATA_ROOT}/projects` -> `/home/node/projects`
+- `config/claude`、`config/codex`、`config/superpowers`、`config/ccman`、`config/gemini`、`config/gemini-home`、`config/opencode`、`config/taskmaster`、`config/gh`、`config/agents`
+- `software/tailscale`、`software/go`、`software/go-build-cache`、`software/cron/crontabs`、`software/bootstrap`、`software/cloudcli-xdg`（CloudCLI 状态与 DB，避免 `~/.config/cloudcli` 符号链接触发 Node `mkdir` 报错）
 
 </details>
 
@@ -251,36 +251,19 @@ services:
       - GOCACHE=/home/node/.cache/go-build
       - INSTALL_GO_RUNTIME=
       - INSTALL_BUILD_ESSENTIAL=
+      # CloudCLI（claudecodeui）；默认同仓库 docker-compose.yml
+      - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
+      - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
 
     volumes:
-      # 数据根目录，保留配置、项目与 user-init.sh
       - /data/coding-agent:/data/coding-agent
-      # 项目工作区
-      - /data/coding-agent/projects:/home/node/projects
-      # Claude Code 配置与登录态
-      - /data/coding-agent/config/claude:/home/node/.claude
-      # Codex 配置与登录态
-      - /data/coding-agent/config/codex:/home/node/.codex
-      # ccman provider 配置
-      - /data/coding-agent/config/ccman:/home/node/.ccman
-      # Gemini 配置
-      - /data/coding-agent/config/gemini:/home/node/.config/gemini
-      - /data/coding-agent/config/gemini-home:/home/node/.gemini
-      # OpenCode / OpenClaw / Task Master
-      - /data/coding-agent/config/opencode:/home/node/.config/opencode
-      - /data/coding-agent/config/openclaw-home:/home/node/.openclaw
-      - /data/coding-agent/config/taskmaster:/home/node/.task-master
-      # Go 持久化
-      - /data/coding-agent/config/go:/home/node/go
-      - /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build
 
     ports:
-      # 8080: 预留给 cc-connect 或桥接服务
-      - "8080:8080"
-      # 3000: 预留给 Ralph / Web UI 类服务
-      - "3000:3000"
-      # 9000: 通用开发或调试端口
-      - "9000:9000"
+      # 与仓库 docker-compose.yml 一致：宿主机端口可用 PORT_*，CloudCLI 容器内端口为 CLOUDCLI_PORT
+      - "${PORT_CC_CONNECT:-8080}:8080"
+      - "${PORT_RALPH:-3000}:3000"
+      - "${PORT_CLOUDCLI:-3001}:${CLOUDCLI_PORT:-3001}"
+      - "${PORT_DEV:-9000}:9000"
 
     cap_add:
       - NET_ADMIN
@@ -309,29 +292,23 @@ docker run -d --name coding-agent \
   -e NODE_ENV=development \
   -e GOPATH=/home/node/go \
   -e GOCACHE=/home/node/.cache/go-build \
+  -e CLOUDCLI_ENABLE=true \
+  -e CLOUDCLI_PORT=3001 \
   -p 8080:8080 \
   -p 3000:3000 \
+  -p 3001:3001 \
   -p 9000:9000 \
   --cap-add NET_ADMIN \
   --device /dev/net/tun:/dev/net/tun \
   -v /data/coding-agent:/data/coding-agent \
-  -v /data/coding-agent/projects:/home/node/projects \
-  -v /data/coding-agent/config/claude:/home/node/.claude \
-  -v /data/coding-agent/config/codex:/home/node/.codex \
-  -v /data/coding-agent/config/ccman:/home/node/.ccman \
-  -v /data/coding-agent/config/gemini:/home/node/.config/gemini \
-  -v /data/coding-agent/config/gemini-home:/home/node/.gemini \
-  -v /data/coding-agent/config/opencode:/home/node/.config/opencode \
-  -v /data/coding-agent/config/openclaw-home:/home/node/.openclaw \
-  -v /data/coding-agent/config/taskmaster:/home/node/.task-master \
-  -v /data/coding-agent/config/go:/home/node/go \
-  -v /data/coding-agent/config/go-build-cache:/home/node/.cache/go-build \
   ghcr.io/moshall/coding_agent_docker:latest
 ```
 
 ### Port Notes
 
-- `8080`、`3000`、`9000` 是镜像预留的常用映射，不代表容器启动后一定默认已有进程监听。
+- `8080`、`3000`、`3001`、`9000` 是镜像预留的常用映射。默认 **CloudCLI** 在容器内监听 **`CLOUDCLI_PORT`（默认 `3001`）**，Compose 用 **`PORT_CLOUDCLI`→`CLOUDCLI_PORT`** 映射到宿主机（可用 `CLOUDCLI_ENABLE=false` 关闭进程，但端口行可保留无害）。
+- 若修改 `CLOUDCLI_PORT`，`docker run` 须同步为 `-p <宿主机端口>:<CLOUDCLI_PORT>`。
+- `8080`、`9000` 不代表一定有进程在监听。
 - 如果你只把它当作纯 CLI 工作容器，可以删除 `ports:` 相关配置。
 - 如果你需要让宿主机或其他容器访问容器内服务，服务本身需要监听 `0.0.0.0`；仅做 Docker 端口映射并不会自动改写应用的绑定地址。
 
@@ -388,6 +365,24 @@ docker compose exec coding-agent ccman
 echo "$CODING_AGENT_VERSION"
 echo "$CODING_AGENT_BUILD_DATE"
 echo "$CODING_AGENT_VCS_REF"
+echo "$CODING_AGENT_BOM_PATH"
+```
+
+构建时会把当时装机的 **npm / CLI / Python 库** 版本写入 **物料清单（BOM）**：
+
+```bash
+cat "$CODING_AGENT_BOM_PATH"
+# 或
+python3 -m json.tool "$CODING_AGENT_BOM_PATH"
+```
+
+镜像内全局 npm 由仓库 **`docker/npm-required.txt`**、**`docker/npm-optional.txt`** 固定版本；Python 由 **`docker/python-requirements.txt`** 固定。要发布「新工具版本基线」时，维护者在仓库里改这些文件并打 tag 即可；**用户不必跟着每次上游小版本漂移**。
+
+可选：构建 **`cc-connect`** 时使用 git 分支/tag（默认可不填，拉取仓库默认分支 HEAD）：
+
+```env
+# 仅源码构建时传入 docker compose / build-arg
+# CC_CONNECT_GIT_REF=v1.0.0
 ```
 
 在宿主机查看镜像 OCI 标签：
@@ -395,6 +390,8 @@ echo "$CODING_AGENT_VCS_REF"
 ```bash
 docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' ghcr.io/moshall/coding_agent_docker:latest
 ```
+
+**拉取不可变制品**：除 `v1.2.3`、`sha-abc…`、`date-YYYYMMDD` 等 tag 外，还可用 registry digest（`docker pull ghcr.io/…@sha256:…`）锁定某次构建。
 
 ## Build and Release
 

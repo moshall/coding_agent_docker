@@ -7,6 +7,7 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-unknown}
         VCS_REF: ${VCS_REF:-unknown}
+        CC_CONNECT_GIT_REF: ${CC_CONNECT_GIT_REF:-}
     image: coding-agent:dev
     extends:
       file: docker-compose.yml

@@ -19,5 +19,5 @@ assert_contains Dockerfile "FROM golang:1.25-bookworm AS go-builder" "Dockerfile
 assert_contains Dockerfile "FROM node:22-bookworm" "Dockerfile has Node runtime stage"
 assert_contains entrypoint.sh 'exec gosu node "$@"' "Entrypoint switches to node user"
 assert_contains docker-compose.yml "NET_ADMIN" "Compose includes NET_ADMIN capability"
-assert_contains docker-compose.yml "MOUNT_OPENCLAW" "Compose includes optional OpenClaw mount"
+assert_contains docker-compose.yml '${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}' "Compose binds single DATA_ROOT volume"
 assert_contains .env.example "TASKMASTER_MAIN_PROVIDER" ".env template includes Task Master config"
