@@ -244,7 +244,7 @@ docker compose pull && docker compose up -d
 
 下面内容与仓库根目录 [**docker-compose.yml**](./docker-compose.yml) **保持同一套编排**（维护时以仓库文件为唯一事实来源；此处方便「复制即用」）。
 
-**你需要自己提供的主要是密钥**：在同级目录创建 `.env`，至少填写要用的 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等（见 [.env.example](./.env.example)）。**其余项在下列模板里已全部列出**：带 `:-默认值` 的变量可不写 `.env`；未在 compose 里写默认的密钥/可选项在 `.env` 里留空即表示传入空字符串，镜像仍可按预期启动。
+**你需要自己提供的主要是密钥**：在同级目录创建 `.env`，至少填写要用的 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等（见 [.env.example](./.env.example)）。**其余项在下列模板里已全部列出**：带 `:-默认值` 或 `:-`（空默认）的变量可不写 `.env`；密钥行使用 `${VAR:-}`，未设置时不再触发 Compose 的 “variable is not set” 告警（部分面板会把该告警 stderr 误判为失败）。
 
 ```yaml
 services:
@@ -262,27 +262,27 @@ services:
       - INSTALL_GO_RUNTIME=${INSTALL_GO_RUNTIME:-}
       - INSTALL_BUILD_ESSENTIAL=${INSTALL_BUILD_ESSENTIAL:-}
 
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
 
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - CODEX_MODEL=${CODEX_MODEL:-gpt-5-codex}
 
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
 
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
       - TASKMASTER_MAIN_PROVIDER=${TASKMASTER_MAIN_PROVIDER:-anthropic}
       - TASKMASTER_MAIN_MODEL=${TASKMASTER_MAIN_MODEL:-claude-sonnet-4-20250514}
-      - TASKMASTER_RESEARCH_PROVIDER=${TASKMASTER_RESEARCH_PROVIDER}
-      - TASKMASTER_RESEARCH_MODEL=${TASKMASTER_RESEARCH_MODEL}
-      - TASKMASTER_FALLBACK_PROVIDER=${TASKMASTER_FALLBACK_PROVIDER}
-      - TASKMASTER_FALLBACK_MODEL=${TASKMASTER_FALLBACK_MODEL}
+      - TASKMASTER_RESEARCH_PROVIDER=${TASKMASTER_RESEARCH_PROVIDER:-}
+      - TASKMASTER_RESEARCH_MODEL=${TASKMASTER_RESEARCH_MODEL:-}
+      - TASKMASTER_FALLBACK_PROVIDER=${TASKMASTER_FALLBACK_PROVIDER:-}
+      - TASKMASTER_FALLBACK_MODEL=${TASKMASTER_FALLBACK_MODEL:-}
 
-      - GH_TOKEN=${GH_TOKEN}
+      - GH_TOKEN=${GH_TOKEN:-}
 
-      - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY}
+      - TAILSCALE_AUTHKEY=${TAILSCALE_AUTHKEY:-}
       - TAILSCALE_HOSTNAME=${TAILSCALE_HOSTNAME:-coding-agent}
 
       - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
@@ -488,6 +488,22 @@ docker pull ghcr.io/moshall/coding_agent_docker:v1.0.1
 ```
 
 ## Troubleshooting
+
+### 1Panel（或类似面板）报 `docker-compose config failed` / `invalid proto`
+
+1. **一长串 `variable is not set` 警告**  
+   旧版编排若写 `${ANTHROPIC_API_KEY}` 而无默认值，Compose 会打 warning。**部分面板把 stderr 里的 warning 当成失败。** 请使用本仓库最新 [`docker-compose.yml`](./docker-compose.yml)（密钥类已改为 **`${ANTHROPIC_API_KEY:-}`** 等，未设置时静默为空）。
+
+2. **`compose.yml` 与 `.env` 同目录**  
+   面板「工作目录」需与 `docker-compose.yml`、`.env` 一致；或在面板环境变量里补全同名键（否则仅 compose 内默认值生效）。
+
+3. **`invalid proto`**  
+   多为 **端口映射展开异常**（例如某环境变量被设成空、`8080:` 缺右侧）。请 SSH 到主机在编排目录执行：  
+   `docker compose config`  
+   若仍失败，检查 `ports:` 四行是否被面板改坏；可暂时改成固定数字（如 `3001:3001`）对照。
+
+4. **命令名**  
+   建议使用 **`docker compose`（V2 插件）**；若机器只有 **`docker-compose`（独立 v1）** 可能行为略有差异。
 
 ### `docker compose exec` 提示找不到配置文件
 
