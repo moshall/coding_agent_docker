@@ -6,10 +6,14 @@
 
 | 文件 | 说明 |
 |------|------|
-| [docker-compose.yml](./docker-compose.yml) | 独立可用；含 `version: "3.8"`、`name:`，部分面板校验更稳定；**默认 `DATA_ROOT` 为 `/opt/1panel/apps/coding_agent_docker`** |
+| [docker-compose.yml](./docker-compose.yml) | **`image` / 主数据卷 / `ports` 为字面量**（1Panel 创建编排拉镜像、解析卷时常不做 `${}` 替换）；默认数据路径 **`/opt/1panel/apps/coding_agent_docker`**；含 `version` / `name` |
 | [.env.example](./.env.example) | 复制为 `.env` 后填写 API Key；路径与 compose 默认一致 |
 
-与仓库根目录 `docker-compose.yml` 的差异主要是：**默认数据目录**、顶部 **version/name**、**可选 OpenClaw 挂载注释**。逻辑一致；主文件更新后我们会尽量同步本目录（见 compose 内注释）。
+与仓库根目录 `docker-compose.yml` 的差异：**为兼容 1Panel，`image` / `container_name` / 主 `volumes` / `ports` 使用字面量**（面板拉镜像、解析卷时常不做 `${}` 替换）；默认数据目录 **`/opt/1panel/apps/coding_agent_docker`**；`version` / `name`。改端口或数据路径请**直接编辑本 `docker-compose.yml`**（仅改 `.env` 不会改动 `ports` / 卷映射行）。密钥与其它可选项仍通过 `.env` + `${VAR:-}` 在 **`docker compose up` 阶段**注入。
+
+### 拉取镜像报 `invalid reference format`
+
+若日志里出现拉取 **`${DOCKER_IMAGE:-ghcr.io/...}`** 整串字面值，即属此类。请使用本目录最新 `docker-compose.yml`，其中 **`image:` 已为固定字符串** `ghcr.io/moshall/coding_agent_docker:latest`。
 
 ## 推荐目录（示例）
 
@@ -38,7 +42,7 @@ sudo chown -R 1000:1000 /opt/1panel/apps/coding_agent_docker
 编辑本目录 `docker-compose.yml`，在 `volumes` 下取消注释并修改宿主机路径，例如：
 
 ```yaml
-- "/opt/1panel/apps/openclaw_260205:${DATA_ROOT:-/opt/1panel/apps/coding_agent_docker}/project/openclaw"
+- /opt/1panel/apps/openclaw_260205:/opt/1panel/apps/coding_agent_docker/project/openclaw
 ```
 
 宿主机目录需对 **1000:1000** 可写，见主 README 持久化小节。

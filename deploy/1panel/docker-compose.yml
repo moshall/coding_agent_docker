@@ -1,18 +1,19 @@
-# coding_agent_docker — 1Panel 独立目录部署用（内容与仓库根目录 docker-compose.yml 对齐）
-# 维护提示：主文件变更后请同步本文件，见 deploy/1panel/README.md
+# coding_agent_docker — 1Panel 专用（见 README.md）
+# 重要：1Panel「创建编排」拉取镜像时不会对 image 做 .env 替换，故 image 必须为纯字符串。
+# 若需固定其它版本，请直接改下方 image 行（勿用 ${DOCKER_IMAGE}）。
 version: "3.8"
 name: coding-agent
 
 services:
   coding-agent:
-    image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
-    container_name: ${CONTAINER_NAME:-coding-agent}
+    image: ghcr.io/moshall/coding_agent_docker:latest
+    container_name: coding-agent
     restart: unless-stopped
 
     environment:
-      - TZ=${TZ:-Asia/Shanghai}
-      - NODE_ENV=${NODE_ENV:-development}
-      - DATA_ROOT=${DATA_ROOT:-/opt/1panel/apps/coding_agent_docker}
+      - TZ=Asia/Shanghai
+      - NODE_ENV=development
+      - DATA_ROOT=/opt/1panel/apps/coding_agent_docker
       - GOPATH=/home/node/go
       - GOCACHE=/home/node/.cache/go-build
       - INSTALL_GO_RUNTIME=${INSTALL_GO_RUNTIME:-}
@@ -47,15 +48,16 @@ services:
       - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
 
     volumes:
-      - ${DATA_ROOT:-/opt/1panel/apps/coding_agent_docker}:${DATA_ROOT:-/opt/1panel/apps/coding_agent_docker}
-      # 与 OpenClaw 等宿主机目录对齐时取消下一行注释，并改成你的真实路径（宿主机:容器内均为 DATA_ROOT 下 project/openclaw）
-      # - "/opt/1panel/apps/openclaw_YYYYMMDD:${DATA_ROOT:-/opt/1panel/apps/coding_agent_docker}/project/openclaw"
+      # 不使用 ${DATA_ROOT}，避免部分面板在解析卷名时不替换变量
+      - /opt/1panel/apps/coding_agent_docker:/opt/1panel/apps/coding_agent_docker
+      # OpenClaw 示例：取消注释并改左侧为宿主机真实路径
+      # - /opt/1panel/apps/openclaw_260205:/opt/1panel/apps/coding_agent_docker/project/openclaw
 
     ports:
-      - "${PORT_CC_CONNECT:-8080}:8080"
-      - "${PORT_RALPH:-3000}:3000"
-      - "${PORT_CLOUDCLI:-3001}:${CLOUDCLI_PORT:-3001}"
-      - "${PORT_DEV:-9000}:9000"
+      - "8080:8080"
+      - "3000:3000"
+      - "3001:3001"
+      - "9000:9000"
 
     cap_add:
       - NET_ADMIN

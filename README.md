@@ -509,6 +509,9 @@ docker pull ghcr.io/moshall/coding_agent_docker:v1.0.1
 4. **命令名**  
    建议使用 **`docker compose`（V2 插件）**；若机器只有 **`docker-compose`（独立 v1）** 可能行为略有差异。
 
+5. **拉取镜像 `invalid reference format`，日志出现字面量 `${DOCKER_IMAGE:-...}`**  
+   面板在**预拉镜像**时可能不对 `image:` 做变量替换。请使用 **[deploy/1panel/docker-compose.yml](./deploy/1panel/docker-compose.yml)**（`image` 为固定字符串），或把 `image:` 改成 **`ghcr.io/moshall/coding_agent_docker:latest`** 等纯镜像名。
+
 ### `docker compose exec` 提示找不到配置文件
 
 你需要在包含 `docker-compose.yml` 的目录执行，或者显式指定文件：
