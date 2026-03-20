@@ -9,7 +9,7 @@
 | [docker-compose.yml](./docker-compose.yml) | **`image` / 主数据卷 / `ports` 为字面量**（1Panel 创建编排拉镜像、解析卷时常不做 `${}` 替换）；默认数据路径 **`/opt/1panel/apps/coding_agent_docker`**；顶栏 **`name:`** 用于 Compose 项目名；**不写 `version:`**（避免 Compose V2 报 obsolete） |
 | [.env.example](./.env.example) | 复制为 `.env` 后填写 API Key；路径与 compose 默认一致 |
 
-与仓库根目录 `docker-compose.yml` 的差异：**为兼容 1Panel，`image` / `container_name` / 主 `volumes` / `ports` 使用字面量**（面板拉镜像、解析卷时常不做 `${}` 替换）；默认数据目录 **`/opt/1panel/apps/coding_agent_docker`**；`version` / `name`。改端口或数据路径请**直接编辑本 `docker-compose.yml`**（仅改 `.env` 不会改动 `ports` / 卷映射行）。密钥与其它可选项仍通过 `.env` + `${VAR:-}` 在 **`docker compose up` 阶段**注入。
+与仓库根目录 `docker-compose.yml` 的差异：**为兼容 1Panel，`image` / `container_name` / 主 `volumes` / `ports` 使用字面量**（面板拉镜像、解析卷时常不做 `${}` 替换）；默认数据目录 **`/opt/1panel/apps/coding_agent_docker`**；额外包含 `project -> /home/node/project` 的工作区映射（便于 CloudCLI 管理 workspace）；`version` / `name`。改端口或数据路径请**直接编辑本 `docker-compose.yml`**（仅改 `.env` 不会改动 `ports` / 卷映射行）。密钥与其它可选项仍通过 `.env` + `${VAR:-}` 在 **`docker compose up` 阶段**注入。
 
 ### 拉取镜像报 `invalid reference format`
 

@@ -40,12 +40,16 @@ services:
 
       - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
       - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
+      - CLOUDCLI_WORKSPACES_ROOT=${CLOUDCLI_WORKSPACES_ROOT:-/home/node}
+      - CLOUDCLI_DEFAULT_WORKSPACE_PATH=${CLOUDCLI_DEFAULT_WORKSPACE_PATH:-/home/node/project}
 
       - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
 
     volumes:
-      # 仅挂载数据根目录；entrypoint 将 ~/ .claude / .codex 等链到 ${DATA_ROOT}/config/* ，见 README
+      # 主数据根目录（配置、软件状态等）
       - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
+      # 将项目目录直接绑定到 /home/node/project，便于 CloudCLI 在 WORKSPACES_ROOT=/home/node 下通过路径校验
+      - ${DATA_ROOT:-/data/coding-agent}/project:/home/node/project
 
     ports:
       - "${PORT_CC_CONNECT:-8080}:8080"

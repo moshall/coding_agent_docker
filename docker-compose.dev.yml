@@ -7,6 +7,13 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-unknown}
         VCS_REF: ${VCS_REF:-unknown}
+        TOOL_VERSION_CHANNEL: ${TOOL_VERSION_CHANNEL:-baseline}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
+        CODEX_VERSION: ${CODEX_VERSION:-}
+        CLOUDCLI_VERSION: ${CLOUDCLI_VERSION:-}
+        CCMAN_VERSION: ${CCMAN_VERSION:-}
+        GH_VERSION: ${GH_VERSION:-}
+        CC_CONNECT_VERSION_CHANNEL: ${CC_CONNECT_VERSION_CHANNEL:-baseline}
         CC_CONNECT_GIT_REF: ${CC_CONNECT_GIT_REF:-}
     image: coding-agent:dev
     extends:

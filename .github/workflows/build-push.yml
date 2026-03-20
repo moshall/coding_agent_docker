@@ -63,6 +63,71 @@ jobs:
           echo "build_date=${build_date}" >> "$GITHUB_OUTPUT"
           echo "vcs_ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve upstream tool versions
+        id: tool_versions
+        run: |
+          set -euo pipefail
+
+          fallback_from_pin() {
+            local pkg="$1"
+            awk -v pkg="${pkg}" '
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              {
+                line=$0
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+                if (index(line, pkg "@") == 1) {
+                  print substr(line, length(pkg) + 2)
+                  exit
+                }
+              }
+            ' docker/npm-required.txt
+          }
+
+          resolve_npm_latest() {
+            local pkg="$1"
+            npm view "${pkg}" version 2>/dev/null | tr -d '[:space:]'
+          }
+
+          resolve_with_fallback() {
+            local pkg="$1"
+            local resolved=""
+            resolved="$(resolve_npm_latest "${pkg}" || true)"
+            if [[ -z "${resolved}" ]]; then
+              resolved="$(fallback_from_pin "${pkg}" || true)"
+            fi
+            echo "${resolved}"
+          }
+
+          resolve_cc_connect_latest_tag() {
+            git ls-remote --tags --refs https://github.com/chenhg5/cc-connect.git "refs/tags/v*" \
+              | awk -F/ '{print $3}' \
+              | sort -V \
+              | tail -n 1
+          }
+
+          resolve_gh_latest() {
+            curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
+              | sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' \
+              | head -n 1
+          }
+
+          claude_code_version="$(resolve_with_fallback "@anthropic-ai/claude-code")"
+          codex_version="$(resolve_with_fallback "@openai/codex")"
+          cloudcli_version="$(resolve_with_fallback "@siteboon/claude-code-ui")"
+          ccman_version="$(resolve_with_fallback "ccman")"
+          cc_connect_git_ref="$(resolve_cc_connect_latest_tag || true)"
+          gh_version="$(resolve_gh_latest || true)"
+
+          echo "tool_version_channel=latest" >> "$GITHUB_OUTPUT"
+          echo "cc_connect_version_channel=latest" >> "$GITHUB_OUTPUT"
+          echo "claude_code_version=${claude_code_version}" >> "$GITHUB_OUTPUT"
+          echo "codex_version=${codex_version}" >> "$GITHUB_OUTPUT"
+          echo "cloudcli_version=${cloudcli_version}" >> "$GITHUB_OUTPUT"
+          echo "ccman_version=${ccman_version}" >> "$GITHUB_OUTPUT"
+          echo "cc_connect_git_ref=${cc_connect_git_ref}" >> "$GITHUB_OUTPUT"
+          echo "gh_version=${gh_version}" >> "$GITHUB_OUTPUT"
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -93,6 +158,14 @@ jobs:
           BUILD_VERSION=${{ steps.tags.outputs.build_version }}
           BUILD_DATE=${{ steps.tags.outputs.build_date }}
           VCS_REF=${{ steps.tags.outputs.vcs_ref }}
+          TOOL_VERSION_CHANNEL=${{ steps.tool_versions.outputs.tool_version_channel }}
+          CLAUDE_CODE_VERSION=${{ steps.tool_versions.outputs.claude_code_version }}
+          CODEX_VERSION=${{ steps.tool_versions.outputs.codex_version }}
+          CLOUDCLI_VERSION=${{ steps.tool_versions.outputs.cloudcli_version }}
+          CCMAN_VERSION=${{ steps.tool_versions.outputs.ccman_version }}
+          GH_VERSION=${{ steps.tool_versions.outputs.gh_version }}
+          CC_CONNECT_VERSION_CHANNEL=${{ steps.tool_versions.outputs.cc_connect_version_channel }}
+          CC_CONNECT_GIT_REF=${{ steps.tool_versions.outputs.cc_connect_git_ref }}
           EOF
 
           rm -rf "${GITHUB_WORKSPACE}/.ci-data"
@@ -248,3 +321,10 @@ jobs:
           if [[ -n "${{ steps.tags.outputs.version }}" ]]; then
             echo "- Pushed tag: \`${{ steps.tags.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "- Tool channel: \`${{ steps.tool_versions.outputs.tool_version_channel }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Claude Code: \`${{ steps.tool_versions.outputs.claude_code_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Codex: \`${{ steps.tool_versions.outputs.codex_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CloudCLI: \`${{ steps.tool_versions.outputs.cloudcli_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ccman: \`${{ steps.tool_versions.outputs.ccman_version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cc-connect ref: \`${{ steps.tool_versions.outputs.cc_connect_git_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- gh: \`${{ steps.tool_versions.outputs.gh_version }}\`" >> "$GITHUB_STEP_SUMMARY"

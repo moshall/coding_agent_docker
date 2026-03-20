@@ -3,12 +3,20 @@
 ARG BUILD_VERSION=dev
 ARG BUILD_DATE=unknown
 ARG VCS_REF=unknown
+ARG TOOL_VERSION_CHANNEL=baseline
+ARG CLAUDE_CODE_VERSION=
+ARG CODEX_VERSION=
+ARG CLOUDCLI_VERSION=
+ARG CCMAN_VERSION=
+ARG GH_VERSION=
+ARG CC_CONNECT_VERSION_CHANNEL=baseline
 
 FROM golang:1.25-bookworm AS go-builder
 
 ARG CC_CONNECT_REPO=https://github.com/chenhg5/cc-connect.git
 # Optional: git branch or tag for reproducible cc-connect (e.g. v1.2.0). Empty = default branch HEAD.
 ARG CC_CONNECT_GIT_REF=
+ARG CC_CONNECT_VERSION_CHANNEL=baseline
 WORKDIR /build
 
 RUN set -eux; \
@@ -28,9 +36,13 @@ RUN set -eux; \
       GO111MODULE=off GOTOOLCHAIN=local go build -ldflags='-w -s' -o /build/cc-connect ./cc-connect-main.go; \
       rm -rf "${tmpdir}"; \
     }; \
+    cc_connect_ref="${CC_CONNECT_GIT_REF}"; \
+    if [ -z "${cc_connect_ref}" ] && [ "${CC_CONNECT_VERSION_CHANNEL}" = "latest" ]; then \
+      cc_connect_ref="$(git ls-remote --tags --refs "${CC_CONNECT_REPO}" "refs/tags/v*" | awk -F/ '{print $3}' | sort -V | tail -n 1 || true)"; \
+    fi; \
     if git ls-remote "${CC_CONNECT_REPO}" >/dev/null 2>&1; then \
-      if [ -n "${CC_CONNECT_GIT_REF}" ]; then \
-        git clone --depth 1 --branch "${CC_CONNECT_GIT_REF}" "${CC_CONNECT_REPO}" /tmp/cc-connect; \
+      if [ -n "${cc_connect_ref}" ]; then \
+        git clone --depth 1 --branch "${cc_connect_ref}" "${CC_CONNECT_REPO}" /tmp/cc-connect; \
       else \
         git clone --depth 1 "${CC_CONNECT_REPO}" /tmp/cc-connect; \
       fi; \
@@ -50,6 +62,12 @@ FROM node:22-bookworm
 ARG BUILD_VERSION=dev
 ARG BUILD_DATE=unknown
 ARG VCS_REF=unknown
+ARG TOOL_VERSION_CHANNEL=baseline
+ARG CLAUDE_CODE_VERSION=
+ARG CODEX_VERSION=
+ARG CLOUDCLI_VERSION=
+ARG CCMAN_VERSION=
+ARG GH_VERSION=
 
 USER root
 
@@ -62,12 +80,14 @@ LABEL org.opencontainers.image.title="coding_agent_docker" \
 ENV CODING_AGENT_VERSION="${BUILD_VERSION}" \
     CODING_AGENT_BUILD_DATE="${BUILD_DATE}" \
     CODING_AGENT_VCS_REF="${VCS_REF}" \
+    CODING_AGENT_TOOL_CHANNEL="${TOOL_VERSION_CHANNEL}" \
     CODING_AGENT_BOM_PATH=/usr/share/doc/coding-agent/bom.json \
     DEBIAN_FRONTEND=noninteractive
 
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+      bubblewrap \
       ca-certificates \
       cron \
       curl \
@@ -91,8 +111,27 @@ RUN set -eux; \
     chmod go+r /usr/share/keyrings/tailscale-archive-keyring.gpg; \
     curl -fsSL https://pkgs.tailscale.com/stable/debian/bookworm.tailscale-keyring.list > /etc/apt/sources.list.d/tailscale.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends gh tailscale; \
+    apt-get install -y --no-install-recommends tailscale; \
     rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "${arch}" in \
+      amd64) gh_arch="amd64" ;; \
+      arm64) gh_arch="arm64" ;; \
+      *) echo "unsupported arch for gh: ${arch}" >&2; exit 1 ;; \
+    esac; \
+    if [ -n "${GH_VERSION}" ]; then \
+      gh_ver="${GH_VERSION#v}"; \
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${gh_ver}/gh_${gh_ver}_linux_${gh_arch}.tar.gz" -o /tmp/gh.tgz; \
+      tar -xzf /tmp/gh.tgz -C /tmp; \
+      install -m 0755 "/tmp/gh_${gh_ver}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh; \
+      rm -rf /tmp/gh.tgz "/tmp/gh_${gh_ver}_linux_${gh_arch}"; \
+    else \
+      apt-get update; \
+      apt-get install -y --no-install-recommends gh; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 COPY docker/python-requirements.txt /tmp/python-requirements.txt
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/python-requirements.txt \
@@ -100,14 +139,22 @@ RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/python-requireme
 
 COPY docker/npm-required.txt /tmp/npm-required.txt
 COPY docker/npm-optional.txt /tmp/npm-optional.txt
+COPY docker/resolve-npm-versions.sh /tmp/resolve-npm-versions.sh
 RUN set -eux; \
+    chmod +x /tmp/resolve-npm-versions.sh; \
+    TOOL_VERSION_CHANNEL="${TOOL_VERSION_CHANNEL}" \
+    CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION}" \
+    CODEX_VERSION="${CODEX_VERSION}" \
+    CLOUDCLI_VERSION="${CLOUDCLI_VERSION}" \
+    CCMAN_VERSION="${CCMAN_VERSION}" \
+    /tmp/resolve-npm-versions.sh /tmp/npm-required.txt /tmp/npm-required-resolved.txt; \
     while IFS= read -r line || [ -n "${line}" ]; do \
       line="${line#"${line%%[![:space:]]*}"}"; \
       line="${line%"${line##*[![:space:]]}"}"; \
       [ -z "${line}" ] && continue; \
       case "${line}" in \#*) continue ;; esac; \
       npm install -g "${line}"; \
-    done < /tmp/npm-required.txt; \
+    done < /tmp/npm-required-resolved.txt; \
     while IFS= read -r line || [ -n "${line}" ]; do \
       line="${line#"${line%%[![:space:]]*}"}"; \
       line="${line%"${line##*[![:space:]]}"}"; \
@@ -115,11 +162,16 @@ RUN set -eux; \
       case "${line}" in \#*) continue ;; esac; \
       npm install -g "${line}" || echo "optional npm failed: ${line}"; \
     done < /tmp/npm-optional.txt; \
-    rm -f /tmp/npm-required.txt /tmp/npm-optional.txt
+    if [ -d /usr/local/lib/node_modules/@siteboon/claude-code-ui ] && [ ! -f /usr/local/lib/node_modules/@siteboon/claude-code-ui/.env ]; then \
+      touch /usr/local/lib/node_modules/@siteboon/claude-code-ui/.env; \
+    fi; \
+    rm -f /tmp/npm-required.txt /tmp/npm-required-resolved.txt /tmp/npm-optional.txt /tmp/resolve-npm-versions.sh
 
 COPY --from=go-builder /build/cc-connect /usr/local/bin/cc-connect
 COPY docker/record-bom.sh /tmp/record-bom.sh
 COPY ccman-wrapper.sh /tmp/ccman-wrapper.sh
+COPY cloudcli-wrapper.sh /tmp/cloudcli-wrapper.sh
+COPY codingagentconfig.sh /tmp/codingagentconfig.sh
 COPY entrypoint.sh /entrypoint.sh
 COPY user-init.sh.example /home/node/user-init.sh.example
 
@@ -127,6 +179,11 @@ RUN set -eux; \
     mv /usr/local/bin/ccman /usr/local/bin/ccman-real; \
     install -m 0755 /tmp/ccman-wrapper.sh /usr/local/bin/ccman; \
     rm -f /tmp/ccman-wrapper.sh; \
+    mv /usr/local/bin/cloudcli /usr/local/bin/cloudcli-real; \
+    install -m 0755 /tmp/cloudcli-wrapper.sh /usr/local/bin/cloudcli; \
+    rm -f /tmp/cloudcli-wrapper.sh; \
+    install -m 0755 /tmp/codingagentconfig.sh /usr/local/bin/codingagentconfig; \
+    rm -f /tmp/codingagentconfig.sh; \
     chmod +x /tmp/record-bom.sh && /tmp/record-bom.sh && rm -f /tmp/record-bom.sh; \
     chmod +x /entrypoint.sh /home/node/user-init.sh.example && \
     chown node:node /home/node/user-init.sh.example

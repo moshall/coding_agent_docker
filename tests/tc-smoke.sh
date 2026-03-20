@@ -20,4 +20,5 @@ assert_contains Dockerfile "FROM node:22-bookworm" "Dockerfile has Node runtime 
 assert_contains entrypoint.sh 'exec gosu node "$@"' "Entrypoint switches to node user"
 assert_contains docker-compose.yml "NET_ADMIN" "Compose includes NET_ADMIN capability"
 assert_contains docker-compose.yml '${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}' "Compose binds single DATA_ROOT volume"
+assert_contains docker-compose.yml '${DATA_ROOT:-/data/coding-agent}/project:/home/node/project' "Compose maps project workspace into /home/node/project"
 assert_contains .env.example "TASKMASTER_MAIN_PROVIDER" ".env template includes Task Master config"

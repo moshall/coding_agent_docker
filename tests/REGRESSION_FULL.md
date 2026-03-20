@@ -6,7 +6,7 @@
 - **GitHub Actions** [`.github/workflows/build-push.yml`](../.github/workflows/build-push.yml) 中构建与容器内检查
 - **真机/准生产** 扩展项（与 [`MANUAL_REAL_MACHINE_CHECKLIST.md`](./MANUAL_REAL_MACHINE_CHECKLIST.md) 一致，此处只列索引）
 
-与当前产品模型对齐的要点：**单卷 `DATA_ROOT`**（`project` / `config` / `software`）、**CloudCLI（claudecodeui）**、**无 openclaw 专用挂载与 openclaw/skills 克隆**、**npm/pip 锁文件 + 镜像内 `bom.json`**。
+与当前产品模型对齐的要点：**`DATA_ROOT` 主卷 + `project:/home/node/project` 工作区别名挂载**（`project` / `config` / `software`）、**CloudCLI（claudecodeui）**、**无 openclaw 专用挂载与 openclaw/skills 克隆**、**npm/pip 锁文件 + 镜像内 `bom.json`**。
 
 ---
 
@@ -81,10 +81,41 @@ bash tests/run-all.sh
 | TC-TOOL-03 | Dockerfile **无** `@google/gemini-cli` |
 | TC-TOOL-04 | Dockerfile **无** `opencode-ai` |
 | TC-TOOL-05 | npm 锁含 `task-master-ai@` |
-| TC-TOOL-06 | apt 安装 `gh tailscale` |
+| TC-TOOL-06 | Dockerfile 支持 `GH_VERSION` 固定安装 |
 | TC-TOOL-07 | npm 锁含 `@siteboon/claude-code-ui@`（**CloudCLI**） |
 | TC-TOOL-07b | Dockerfile 使用 `npm-required.txt` 安装 |
 | TC-TOOL-08 | entrypoint：`maybe_start_cloudcli` |
+| TC-TOOL-09 | `cloudcli-wrapper.sh` 存在 |
+| TC-TOOL-10 | Dockerfile 安装 `cloudcli-wrapper.sh` |
+| TC-TOOL-11 | entrypoint 传递 `WORKSPACES_ROOT` |
+| TC-TOOL-12 | `cloudcli-wrapper` 包含 Python socket 端口检测兜底 |
+
+---
+
+### 2.4b `tc-configcli.sh`（TC-CONFIGCLI）
+
+| ID | 说明 |
+|----|------|
+| TC-CONFIGCLI-01 | `codingagentconfig.sh` 存在 |
+| TC-CONFIGCLI-02 | Dockerfile 安装 `/usr/local/bin/codingagentconfig` |
+| TC-CONFIGCLI-03 | 菜单含快捷配置服务商入口 |
+| TC-CONFIGCLI-04 | 菜单可触发 `ccman` |
+| TC-CONFIGCLI-05 | 更新菜单包含 `claudecodeui` |
+| TC-CONFIGCLI-06 | 工作区创建使用 `CLOUDCLI_DEFAULT_WORKSPACE_PATH` |
+| TC-CONFIGCLI-07 | 工作区名英文校验 |
+| TC-CONFIGCLI-08 | 主菜单包含 `Health status` |
+| TC-CONFIGCLI-09 | 健康检查包含 `cron process` |
+| TC-CONFIGCLI-10 | 健康检查包含 `cloudcli HTTP` |
+| TC-CONFIGCLI-11 | 主菜单包含 `cc-connect quick bind` |
+| TC-CONFIGCLI-12 | 快绑逻辑写入 `.cc-connect/config.toml` |
+| TC-CONFIGCLI-13 | 快绑支持 `Telegram` |
+| TC-CONFIGCLI-14 | 快绑支持 `Discord` |
+| TC-CONFIGCLI-15 | 快绑支持 `Feishu` |
+| TC-CONFIGCLI-16 | 主菜单包含 `cc-connect connection self-check` |
+| TC-CONFIGCLI-17 | 自检逻辑读取 `cc_connect_config_path` |
+| TC-CONFIGCLI-18 | 自检包含凭据字段检查（`Credentials:`） |
+| TC-CONFIGCLI-19 | 自检包含 `cc-connect process` |
+| TC-CONFIGCLI-20 | 自检包含 `cc-connect listening` |
 
 ---
 
@@ -128,11 +159,13 @@ bash tests/run-all.sh
 
 | ID | 说明 |
 |----|------|
-| TC-PERSIST-01 | compose **仅** `DATA_ROOT:DATA_ROOT` |
+| TC-PERSIST-01 | compose 包含 `DATA_ROOT:DATA_ROOT` 主卷 |
+| TC-PERSIST-01b | compose 包含 `${DATA_ROOT}/project:/home/node/project` |
 | TC-PERSIST-02 | compose **无** `config/claude:/home/node/.claude` |
 | TC-PERSIST-03 | `link_persistence_from_data_root` |
 | TC-PERSIST-04 | compose **无** cargo 卷 |
 | TC-PERSIST-05 | `ensure_ln_home` → `/home/node/project` |
+| TC-PERSIST-05b | 识别 `/home/node/project` 绑定挂载（避免误改符号链接） |
 | TC-PERSIST-06 | `TASKMASTER_ENV` 生成 |
 | TC-PERSIST-07 | `DATA_ROOT` 在 `/root/*` 时 `ensure_data_root_traversable_for_node`（1Panel） |
 
@@ -204,7 +237,7 @@ bash tests/run-all.sh
 |----|------|
 | TC-TAILSCALE-01 | compose：`NET_ADMIN` |
 | TC-TAILSCALE-02 | `/dev/net/tun` |
-| TC-TAILSCALE-03 | Dockerfile：`gh tailscale` |
+| TC-TAILSCALE-03 | Dockerfile：`apt install tailscale` |
 
 ---
 

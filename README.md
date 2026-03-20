@@ -57,9 +57,9 @@
 | --- | --- | --- |
 | AI CLI | `claude-code`、`codex`、`task-master` | 镜像内预装；`gemini-cli` / `opencode-ai` 未预装以控制体积，可按需 `npm i -g` |
 | Web UI | [CloudCLI](https://github.com/siteboon/claudecodeui)（`cloudcli` / `@siteboon/claude-code-ui`） | 默认监听 `0.0.0.0:3001`，与现有 `~/.claude` 会话/配置同源；许可为 **GPL-3.0**（见上游仓库） |
-| 配置工具 | `ccman` | 已做包装，自动以 `node` 用户 + `NODE_ENV=production` 运行 |
+| 配置工具 | `ccman`、`codingagentconfig` | `ccman` 已做包装；`codingagentconfig` 提供交互式维护菜单（服务商配置、检查更新、新增工作区、健康检查、cc-connect 快速绑定） |
 | 连接/桥接 | `cc-connect` | 构建阶段编译真实二进制，并在 CI 中校验 |
-| 开发运维 | `git`、`gh`、`tmux`、`cron`、`curl`、`wget` | 便于长期驻留和日常操作 |
+| 开发运维 | `git`、`gh`、`tmux`、`cron`、`curl`、`wget`、`bubblewrap` | 便于长期驻留和日常操作 |
 | Python 工具链 | `python3`、`pip`、`uv`、`pandas`、`matplotlib`、`seaborn`、`scipy` | 适合数据处理与脚本任务 |
 | 网络 | `tailscale`、`tailscaled` | 可选启用，需要 `NET_ADMIN` 和 `/dev/net/tun` |
 
@@ -138,12 +138,17 @@ docker compose exec -it --user node -e NODE_ENV=production coding-agent bash
 ### 4. Smoke Check
 
 ```bash
+# 宿主机一键健康检查（推荐）
+./scripts/healthcheck.sh coding-agent
+
+# 也可手工检查关键 CLI
 claude --version
 codex --version
 task-master --version
 ccman --version
 # 若自行全局安装：gemini --version / opencode --version
 cloudcli version
+codingagentconfig
 # 浏览器访问（宿主机映射默认 3001）：http://<主机>:3001
 ```
 
@@ -153,6 +158,8 @@ cloudcli version
 
 ```bash
 docker compose pull && docker compose up -d
+# 建议每次升级后执行健康检查
+./scripts/healthcheck.sh coding-agent
 ```
 
 可选：`docker compose up -d --force-recreate` 强制用新 entrypoint 启容器。若自行 Pin 了 `DOCKER_IMAGE=...:sha-xxx`，请同步改为新 digest 或 `latest`。
@@ -170,7 +177,7 @@ docker compose pull && docker compose up -d
 | 可选代理/网关 | `ANTHROPIC_BASE_URL`、`OPENAI_BASE_URL` | 使用代理或兼容网关时填写 |
 | Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
 | 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
-| CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
+| CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射）、`CLOUDCLI_WORKSPACES_ROOT`（默认 `/home/node`）、`CLOUDCLI_DEFAULT_WORKSPACE_PATH`（默认 `/home/node/project`） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
 | Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE`（默认 `true`） | Claude 侧：先注册 **`obra/superpowers-marketplace`** 再装 **`superpowers@superpowers-marketplace`**（失败再尝试 `claude-plugins-official`）；需出网；`false` 可跳过。Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
 | 可选运行时增强 | `INSTALL_GO_RUNTIME`、`INSTALL_BUILD_ESSENTIAL` | 留空表示关闭，设为 `true` 表示启动时安装，并将选择持久化 |
 | 用户自定义挂载 | 自行编辑 `docker-compose.yml` 的 `volumes` | 例如与宿主机其它项目目录同路径挂载，镜像不提供 OpenClaw 专用变量 |
@@ -207,7 +214,7 @@ docker compose pull && docker compose up -d
 
 这个镜像不是“每次重建都从零开始”的一次性容器，而是带明确持久化设计的工作容器。
 
-**Compose 里只需要挂一条数据根目录**（默认 `${DATA_ROOT:-/data/coding-agent}` 对应到容器内同一路径）。`entrypoint.sh` 在启动时把 `~/.claude`、`~/.codex`、`~/project` 等链接到该根下的子目录，无需为每个工具单独写 `volumes`。
+**Compose 默认挂载数据根目录 + project 工作区别名挂载**：`${DATA_ROOT:-/data/coding-agent}` 保持全量持久化；`${DATA_ROOT}/project:/home/node/project` 让 CloudCLI 在 `WORKSPACES_ROOT=/home/node` 下可直接管理 `project/projects`（避免符号链接越界校验）。
 
 ### 三层目录（心智模型）
 
@@ -333,12 +340,16 @@ services:
 
       - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
       - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
+      - CLOUDCLI_WORKSPACES_ROOT=${CLOUDCLI_WORKSPACES_ROOT:-/home/node}
+      - CLOUDCLI_DEFAULT_WORKSPACE_PATH=${CLOUDCLI_DEFAULT_WORKSPACE_PATH:-/home/node/project}
 
       - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
 
     volumes:
-      # 仅挂载数据根目录；entrypoint 将 ~/.claude / .codex 等链到 ${DATA_ROOT}/config/* ，见 README
+      # 主数据根目录（配置、软件状态等）
       - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
+      # CloudCLI 工作区：project 目录直接映射到 /home/node/project（与 WORKSPACES_ROOT=/home/node 配套）
+      - ${DATA_ROOT:-/data/coding-agent}/project:/home/node/project
 
     ports:
       - "${PORT_CC_CONNECT:-8080}:8080"
@@ -456,6 +467,23 @@ ccman cx current
 docker compose exec -it coding-agent ccman
 ```
 
+### Use codingagentconfig
+
+`codingagentconfig` 是镜像内置的交互式维护菜单（数字选择）：
+
+- `1` 快捷配置服务商：直接进入 `ccman`
+- `2` 检查更新：查看 `codex`、`claude code`、`claudecodeui`、`ccman`、`cc-connect` 是否有新版，并可直接触发更新
+- `3` 新增工作区：在 `/home/node/project` 下创建英文名目录（含重名检测）
+- `4` 健康状态：显示 `cron`、`tailscaled`、`cloudcli` 的运行检查结果（`PASS/FAIL/SKIP`）
+- `5` cc-connect 快速绑定：按向导绑定项目目录 + 聊天渠道（`Telegram` / `Discord` / `Feishu`），并写入 `~/.cc-connect/config.toml`（支持 `CC_CONNECT_CONFIG_PATH` 覆盖）
+- `6` cc-connect 连接自检：检查配置文件、凭据字段、`work_dir`、进程状态与端口监听，一键定位常见故障
+
+示例：
+
+```bash
+docker compose exec -it coding-agent codingagentconfig
+```
+
 ### Check Runtime Version
 
 容器内查看运行时版本元数据：
@@ -475,13 +503,33 @@ cat "$CODING_AGENT_BOM_PATH"
 python3 -m json.tool "$CODING_AGENT_BOM_PATH"
 ```
 
-镜像内全局 npm 由仓库 **`docker/npm-required.txt`**、**`docker/npm-optional.txt`** 固定版本；Python 由 **`docker/python-requirements.txt`** 固定。要发布「新工具版本基线」时，维护者在仓库里改这些文件并打 tag 即可；**用户不必跟着每次上游小版本漂移**。
+镜像支持两种工具版本通道（以 `docker-compose.dev.yml` / build-arg 为准）：
 
-可选：构建 **`cc-connect`** 时使用 git 分支/tag（默认可不填，拉取仓库默认分支 HEAD）：
+- `TOOL_VERSION_CHANNEL=baseline`：使用仓库里的基线版本（`docker/npm-required.txt`、`docker/npm-optional.txt`、`docker/python-requirements.txt`）
+- `TOOL_VERSION_CHANNEL=latest`：构建时追踪上游最新（当前覆盖 `Claude Code`、`Codex`、`CloudCLI`、`ccman`）
+
+`cc-connect` 独立使用 `CC_CONNECT_VERSION_CHANNEL` + `CC_CONNECT_GIT_REF`：
+
+- `CC_CONNECT_VERSION_CHANNEL=baseline` 且 `CC_CONNECT_GIT_REF` 为空：默认分支 HEAD
+- `CC_CONNECT_VERSION_CHANNEL=latest` 且 `CC_CONNECT_GIT_REF` 为空：自动取上游最新 `v*` tag
+- `CC_CONNECT_GIT_REF=vX.Y.Z`（或分支名）：固定源码版本
+
+`gh` 支持 `GH_VERSION` 固定（如 `2.79.0`）；留空则安装构建时可获取到的最新稳定版。
+
+可选：显式固定构建版本（用于环境重建）：
 
 ```env
-# 仅源码构建时传入 docker compose / build-arg
+# Version channels
+# TOOL_VERSION_CHANNEL=latest
+# CC_CONNECT_VERSION_CHANNEL=latest
+
+# Optional fixed versions
+# CLAUDE_CODE_VERSION=2.1.80
+# CODEX_VERSION=0.116.0
+# CLOUDCLI_VERSION=1.25.2
+# CCMAN_VERSION=3.3.23
 # CC_CONNECT_GIT_REF=v1.0.0
+# GH_VERSION=2.79.0
 ```
 
 在宿主机查看镜像 OCI 标签：
@@ -495,6 +543,11 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.versi
 ## Build and Release
 
 自动构建工作流见 [.github/workflows/build-push.yml](./.github/workflows/build-push.yml)。
+
+默认发布策略：
+
+- `main` / 定时构建：使用 `latest` 版本通道，跟踪上游最新工具版本
+- `vX.Y.Z` tag 构建：同样按当日上游解析后构建，并以 `vX.Y.Z` 固化为不可变镜像制品（可结合 digest 做精确重建）
 
 ### Trigger Rules
 
@@ -566,6 +619,20 @@ docker compose -f /path/to/docker-compose.yml exec -it coding-agent bash
 
 默认会启动 **CloudCLI**（`CLOUDCLI_ENABLE` 默认为真），一般可访问**宿主机映射的 `PORT_CLOUDCLI`（默认 3001）**。若你显式关闭了 CloudCLI，或端口未映射 / 安全组未放行，则仍可能看不到页面；其它端口（如 `8080`、`9000`）未必有进程监听。
 
+### 手动执行 `cloudcli` 报 `EADDRINUSE`
+
+通常不是安装失败，而是容器启动时已自动拉起 CloudCLI（默认 `3001`）。新镜像内 `cloudcli` 包装器会在检测到端口已监听时直接提示并退出，避免重复启动报错。若你要手动拉起实例，请先设 `CLOUDCLI_ENABLE=false` 后重建容器，再进入容器执行 `cloudcli`。
+
+### CloudCLI 创建项目只能看到 `/home/node`
+
+CloudCLI（claudecodeui）默认会把工作区根限制在 `WORKSPACES_ROOT`（未设置时通常是当前用户 `HOME`）。本镜像已默认设置 `CLOUDCLI_WORKSPACES_ROOT=/home/node`，并把 `${DATA_ROOT}/project` 直接绑定到 `/home/node/project`，因此可管理：
+
+- `/home/node`
+- `/home/node/project`
+- `/home/node/projects`（指向 `project`）
+
+若你改过这两个变量或卷映射，请确保 `WORKSPACES_ROOT` 与容器内实际路径一致。
+
 ### `ccman` 配置后看起来没生效
 
 优先使用镜像内的 `ccman` 包装命令，或者直接以 `node` 用户进入容器后再操作。避免把配置写成 root 所有者。
@@ -598,6 +665,7 @@ docker compose -f /path/to/docker-compose.yml exec -it coding-agent bash
 - [docker-compose.yml](./docker-compose.yml): 默认部署编排
 - [docker-compose.dev.yml](./docker-compose.dev.yml): 本地构建与 CI 回归编排
 - [.env.example](./.env.example): 环境变量模板
+- [scripts/healthcheck.sh](./scripts/healthcheck.sh): 宿主机一键健康检查（容器状态/cron/cloudcli/tailscaled）
 - [user-init.sh.example](./user-init.sh.example): 自定义启动脚本示例
 - [CHANGELOG.md](./CHANGELOG.md): 版本变更记录
 - [UPGRADING.md](./UPGRADING.md): 升级说明

@@ -44,12 +44,16 @@ services:
 
       - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
       - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
+      - CLOUDCLI_WORKSPACES_ROOT=${CLOUDCLI_WORKSPACES_ROOT:-/home/node}
+      - CLOUDCLI_DEFAULT_WORKSPACE_PATH=${CLOUDCLI_DEFAULT_WORKSPACE_PATH:-/home/node/project}
 
       - SUPERPOWERS_CLAUDE_PLUGIN_ENABLE=${SUPERPOWERS_CLAUDE_PLUGIN_ENABLE:-true}
 
     volumes:
       # 不使用 ${DATA_ROOT}，避免部分面板在解析卷名时不替换变量
       - /opt/1panel/apps/coding_agent_docker:/opt/1panel/apps/coding_agent_docker
+      # CloudCLI 工作区：将 project 目录直接映射到 /home/node/project
+      - /opt/1panel/apps/coding_agent_docker/project:/home/node/project
       # OpenClaw 示例：取消注释并改左侧为宿主机真实路径
       # - /opt/1panel/apps/openclaw_260205:/opt/1panel/apps/coding_agent_docker/project/openclaw
 

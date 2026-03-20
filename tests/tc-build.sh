@@ -11,6 +11,9 @@ run_check "TC-BUILD-05 uses official cc-connect repository" grep -Fq "ARG CC_CON
 run_check "TC-BUILD-05b optional cc-connect git ref" grep -Fq "ARG CC_CONNECT_GIT_REF" Dockerfile
 run_check "TC-BUILD-15 image records bill of materials" grep -Fq "record-bom.sh" Dockerfile
 run_check "TC-BUILD-16 pinned python requirements" test -f docker/python-requirements.txt
+run_check "TC-BUILD-17 Dockerfile supports tool version channel" grep -Fq "ARG TOOL_VERSION_CHANNEL=" Dockerfile
+run_check "TC-BUILD-18 Dockerfile resolves npm versions at build time" grep -Fq "resolve-npm-versions.sh" Dockerfile
+run_check "TC-BUILD-19 runtime image installs bubblewrap" grep -Fq " bubblewrap \\" Dockerfile
 run_check "TC-BUILD-06 fallback build is module-independent" grep -Fq 'GO111MODULE=off GOTOOLCHAIN=local go build' Dockerfile
 run_check "TC-BUILD-07 runtime image excludes Go apt package" bash -c "! grep -Fq '      golang \\' Dockerfile"
 run_check "TC-BUILD-08 runtime image excludes build-essential apt package" bash -c "! grep -Fq '      build-essential \\' Dockerfile"

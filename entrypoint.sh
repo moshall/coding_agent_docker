@@ -135,6 +135,10 @@ ensure_ln_home() {
   elif [[ -d "${link_path}" ]]; then
     if [[ -z "$(ls -A "${link_path}" 2>/dev/null)" ]]; then
       rmdir "${link_path}" 2>/dev/null || true
+      if [[ -d "${link_path}" ]]; then
+        log "WARN: ${link_path} remains a directory; keep as-is and skip symlink -> ${data_path}"
+        return
+      fi
     else
       log "WARN: ${link_path} is non-empty; not replacing with symlink -> ${data_path}"
       return
@@ -218,7 +222,11 @@ link_persistence_from_data_root() {
   ensure_ln_home "/var/lib/tailscale" "${DATA_ROOT}/software/tailscale"
   ensure_ln_home "/var/spool/cron/crontabs" "${DATA_ROOT}/software/cron/crontabs"
 
-  ensure_ln_home "/home/node/project" "${DATA_ROOT}/project"
+  if command -v mountpoint >/dev/null 2>&1 && mountpoint -q /home/node/project; then
+    log "project workspace already bind-mounted at /home/node/project"
+  else
+    ensure_ln_home "/home/node/project" "${DATA_ROOT}/project"
+  fi
   ensure_ln_home "/home/node/projects" "/home/node/project"
 
 }
@@ -249,6 +257,8 @@ maybe_start_cloudcli() {
   chown -R node:node "${cli_xdg}"
 
   local port="${CLOUDCLI_PORT:-3001}"
+  local workspaces_root="${CLOUDCLI_WORKSPACES_ROOT:-/home/node}"
+  local default_workspace_path="${CLOUDCLI_DEFAULT_WORKSPACE_PATH:-/home/node/project}"
   log "starting CloudCLI (claudecodeui) on 0.0.0.0:${port} (log: /var/log/cloudcli.log)..."
   nohup gosu node env \
     HOME=/home/node \
@@ -256,6 +266,8 @@ maybe_start_cloudcli() {
     LOGNAME=node \
     XDG_CONFIG_HOME="${cli_xdg}" \
     NODE_ENV="${NODE_ENV:-production}" \
+    WORKSPACES_ROOT="${workspaces_root}" \
+    DEFAULT_WORKSPACE_PATH="${default_workspace_path}" \
     SERVER_PORT="${port}" \
     HOST=0.0.0.0 \
     DATABASE_PATH="${cli_state}/auth.db" \
