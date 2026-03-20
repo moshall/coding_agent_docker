@@ -240,6 +240,10 @@ docker compose pull && docker compose up -d
 
 ## Deployment Examples
 
+### 1Panel
+
+1Panel 使用方式与标准 Compose 相同（指定目录下的 `docker-compose.yml` + `.env`），无单独「商店 JSON 模板」。我们提供 **独立目录打包**（默认 `DATA_ROOT` 指向 `/opt/1panel/apps/...`、含 `version`/`name` 便于部分面板校验）：见 **[deploy/1panel/README.md](./deploy/1panel/README.md)**（内含 `docker-compose.yml`、`.env.example`）。
+
 ### Compose Template
 
 下面内容与仓库根目录 [**docker-compose.yml**](./docker-compose.yml) **保持同一套编排**（维护时以仓库文件为唯一事实来源；此处方便「复制即用」）。
