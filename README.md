@@ -477,6 +477,7 @@ docker compose exec -it coding-agent ccman
 - `4` 健康状态：显示 `cron`、`tailscaled`、`cloudcli` 的运行检查结果（`PASS/FAIL/SKIP`）
 - `5` cc-connect 快速绑定：按向导绑定项目目录 + 聊天渠道（`Telegram` / `Discord` / `Feishu`），并写入 `~/.cc-connect/config.toml`（支持 `CC_CONNECT_CONFIG_PATH` 覆盖）
 - `6` cc-connect 连接自检：检查配置文件、凭据字段、`work_dir`、进程状态与端口监听，一键定位常见故障
+- `7` cc-connect 服务控制：支持 `start/stop/restart` 和日志查看，方便在菜单里直接拉起或排障
 
 示例：
 

@@ -117,6 +117,120 @@ cc_project_exists() {
   grep -Eq "^[[:space:]]*name[[:space:]]*=[[:space:]]*\"${name}\"[[:space:]]*$" "${cfg}"
 }
 
+port_is_listening() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"
+    return $?
+  fi
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"
+    return $?
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "${port}" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.settimeout(0.5)
+try:
+    rc = sock.connect_ex(("127.0.0.1", port))
+finally:
+    sock.close()
+sys.exit(0 if rc == 0 else 1)
+PY
+    return $?
+  fi
+  return 1
+}
+
+cc_connect_log_path() {
+  local preferred="${CC_CONNECT_LOG_PATH:-/var/log/cc-connect.log}"
+  local dir
+  dir="$(dirname "${preferred}")"
+  if mkdir -p "${dir}" >/dev/null 2>&1 && touch "${preferred}" >/dev/null 2>&1; then
+    printf '%s' "${preferred}"
+    return 0
+  fi
+  local fallback="${HOME:-/home/node}/.cc-connect/cc-connect.log"
+  mkdir -p "$(dirname "${fallback}")" >/dev/null 2>&1 || true
+  touch "${fallback}" >/dev/null 2>&1 || true
+  printf '%s' "${fallback}"
+}
+
+cc_connect_is_running() {
+  pgrep -x cc-connect >/dev/null 2>&1
+}
+
+cc_connect_start_service() {
+  local cfg
+  cfg="$(cc_connect_config_path)"
+  if [[ ! -r "${cfg}" ]]; then
+    echo "Config file not found or unreadable: ${cfg}" >&2
+    return 1
+  fi
+  if ! have_cmd cc-connect; then
+    echo "cc-connect command not found." >&2
+    return 1
+  fi
+  if cc_connect_is_running; then
+    echo "cc-connect is already running."
+    return 0
+  fi
+
+  local log_path
+  log_path="$(cc_connect_log_path)"
+  local cc_port="${CC_CONNECT_PORT:-8080}"
+  if port_is_listening "${cc_port}"; then
+    echo "Port ${cc_port} is already in use. Please free it first." >&2
+    return 1
+  fi
+
+  if [[ "$(id -u)" -eq 0 ]] && id node >/dev/null 2>&1; then
+    if ! gosu node env CC_CONNECT_CFG="${cfg}" CC_CONNECT_LOG="${log_path}" bash -lc 'nohup cc-connect -config "${CC_CONNECT_CFG}" >>"${CC_CONNECT_LOG}" 2>&1 &'; then
+      echo "Failed to start cc-connect as node user." >&2
+      return 1
+    fi
+  else
+    if ! env CC_CONNECT_CFG="${cfg}" CC_CONNECT_LOG="${log_path}" bash -lc 'nohup cc-connect -config "${CC_CONNECT_CFG}" >>"${CC_CONNECT_LOG}" 2>&1 &'; then
+      echo "Failed to start cc-connect." >&2
+      return 1
+    fi
+  fi
+
+  sleep 2
+  if cc_connect_is_running; then
+    echo "cc-connect started successfully."
+    echo "Log: ${log_path}"
+    return 0
+  fi
+
+  echo "cc-connect failed to start. Recent logs:" >&2
+  tail -n 20 "${log_path}" 2>/dev/null >&2 || true
+  return 1
+}
+
+cc_connect_stop_service() {
+  if ! cc_connect_is_running; then
+    echo "cc-connect is not running."
+    return 0
+  fi
+  pkill -x cc-connect >/dev/null 2>&1 || true
+  sleep 2
+  if cc_connect_is_running; then
+    pkill -9 -x cc-connect >/dev/null 2>&1 || true
+    sleep 1
+  fi
+  if cc_connect_is_running; then
+    echo "Failed to stop cc-connect." >&2
+    return 1
+  fi
+  echo "cc-connect stopped."
+  return 0
+}
+
 read_required_input() {
   local prompt="$1"
   local secret="${2:-0}"
@@ -1001,7 +1115,7 @@ menu_cc_connect_self_check() {
 
   local cc_port="${CC_CONNECT_PORT:-8080}"
   local cc_port_up="0"
-  if bash -lc "if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | awk '{print \$4}' | grep -Eq '[:.]${cc_port}\$'; elif command -v netstat >/dev/null 2>&1; then netstat -ltn 2>/dev/null | awk '{print \$4}' | grep -Eq '[:.]${cc_port}\$'; elif command -v python3 >/dev/null 2>&1; then python3 -c 'import socket,sys; s=socket.socket(socket.AF_INET, socket.SOCK_STREAM); s.settimeout(0.5); rc=s.connect_ex((\"127.0.0.1\", int(sys.argv[1]))); s.close(); raise SystemExit(0 if rc == 0 else 1)' '${cc_port}'; else false; fi"; then
+  if port_is_listening "${cc_port}"; then
     cc_port_up="1"
   fi
 
@@ -1019,6 +1133,65 @@ menu_cc_connect_self_check() {
   pause
 }
 
+menu_cc_connect_service_control() {
+  while true; do
+    local cfg
+    cfg="$(cc_connect_config_path)"
+    local cc_port="${CC_CONNECT_PORT:-8080}"
+    local log_path
+    log_path="$(cc_connect_log_path)"
+
+    echo
+    echo "=== cc-connect service control ==="
+    echo "Config: ${cfg}"
+    echo "Port: ${cc_port}"
+    echo "Log: ${log_path}"
+    if cc_connect_is_running; then
+      echo "Status: running"
+    else
+      echo "Status: stopped"
+    fi
+    echo "1. Start service"
+    echo "2. Stop service"
+    echo "3. Restart service"
+    echo "4. Show recent logs"
+    echo "0. Back"
+    echo
+    read -r -p "Select an option: " action
+
+    case "${action}" in
+      1)
+        cc_connect_start_service || true
+        pause
+        ;;
+      2)
+        cc_connect_stop_service || true
+        pause
+        ;;
+      3)
+        cc_connect_stop_service || true
+        cc_connect_start_service || true
+        pause
+        ;;
+      4)
+        if [[ -r "${log_path}" ]]; then
+          echo "--- tail -n 80 ${log_path} ---"
+          tail -n 80 "${log_path}" || true
+        else
+          echo "Log file not readable: ${log_path}"
+        fi
+        pause
+        ;;
+      0)
+        return 0
+        ;;
+      *)
+        echo "Invalid choice."
+        ;;
+    esac
+  done
+}
+
 menu_main() {
   while true; do
     echo
@@ -1029,6 +1202,7 @@ menu_main() {
     echo "4. Health status"
     echo "5. cc-connect quick bind"
     echo "6. cc-connect connection self-check"
+    echo "7. cc-connect service control"
     echo "0. Exit"
     echo
     read -r -p "Select an option: " choice
@@ -1056,6 +1230,9 @@ menu_main() {
         ;;
       6)
         menu_cc_connect_self_check
+        ;;
+      7)
+        menu_cc_connect_service_control
         ;;
       0)
         exit 0

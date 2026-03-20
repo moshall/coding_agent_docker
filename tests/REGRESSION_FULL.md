@@ -116,6 +116,11 @@ bash tests/run-all.sh
 | TC-CONFIGCLI-18 | 自检包含凭据字段检查（`Credentials:`） |
 | TC-CONFIGCLI-19 | 自检包含 `cc-connect process` |
 | TC-CONFIGCLI-20 | 自检包含 `cc-connect listening` |
+| TC-CONFIGCLI-21 | 主菜单包含 `cc-connect service control` |
+| TC-CONFIGCLI-22 | 服务控制包含 `Start service` |
+| TC-CONFIGCLI-23 | 服务控制包含 `Stop service` |
+| TC-CONFIGCLI-24 | 服务控制包含 `Restart service` |
+| TC-CONFIGCLI-25 | 服务控制包含 `Show recent logs` |
 
 ---
 
@@ -210,6 +215,19 @@ bash tests/run-all.sh
 | TC-WORKFLOW-02 | CI：拒绝 `fallback build` |
 | TC-WORKFLOW-03 | CI：拒绝 ccman `[开发模式]` |
 | TC-WORKFLOW-04 | CI：**无** rust toolchain 要求 |
+
+---
+
+### 2.12b `tc-healthcheck.sh`（TC-HEALTH）
+
+| ID | 说明 |
+|----|------|
+| TC-HEALTH-01 | `scripts/healthcheck.sh` 存在 |
+| TC-HEALTH-02 | 包含容器运行状态检查 |
+| TC-HEALTH-03 | 包含 `cron process` 检查 |
+| TC-HEALTH-04 | 包含 `cloudcli HTTP` 检查 |
+| TC-HEALTH-05 | 包含 `tailscaled process` 检查 |
+| TC-HEALTH-06 | cloudcli 端口检测含 Python socket 兜底 |
 
 ---
 

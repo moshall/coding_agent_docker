@@ -23,5 +23,10 @@ run_check "TC-CONFIGCLI-17 self-check validates cc-connect config path" grep -Fq
 run_check "TC-CONFIGCLI-18 self-check validates credentials fields" grep -Fq "Credentials:" codingagentconfig.sh
 run_check "TC-CONFIGCLI-19 self-check validates cc-connect process" grep -Fq "cc-connect process" codingagentconfig.sh
 run_check "TC-CONFIGCLI-20 self-check validates cc-connect port listening" grep -Fq "cc-connect listening" codingagentconfig.sh
+run_check "TC-CONFIGCLI-21 menu has cc-connect service control entry" grep -Fq "cc-connect service control" codingagentconfig.sh
+run_check "TC-CONFIGCLI-22 service control supports start action" grep -Fq "Start service" codingagentconfig.sh
+run_check "TC-CONFIGCLI-23 service control supports stop action" grep -Fq "Stop service" codingagentconfig.sh
+run_check "TC-CONFIGCLI-24 service control supports restart action" grep -Fq "Restart service" codingagentconfig.sh
+run_check "TC-CONFIGCLI-25 service control supports log view action" grep -Fq "Show recent logs" codingagentconfig.sh
 
 summary_and_exit
