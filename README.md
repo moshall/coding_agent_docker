@@ -171,7 +171,7 @@ docker compose pull && docker compose up -d
 | Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
 | 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
 | CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
-| Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE`（默认 `true`） | Claude 侧官方插件安装（需出网）；`false` 可关闭；Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
+| Superpowers | `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE`（默认 `true`） | Claude 侧：先注册 **`obra/superpowers-marketplace`** 再装 **`superpowers@superpowers-marketplace`**（失败再尝试 `claude-plugins-official`）；需出网；`false` 可跳过。Codex 侧由 entrypoint 按上游 `INSTALL.md` 建链 |
 | 可选运行时增强 | `INSTALL_GO_RUNTIME`、`INSTALL_BUILD_ESSENTIAL` | 留空表示关闭，设为 `true` 表示启动时安装，并将选择持久化 |
 | 用户自定义挂载 | 自行编辑 `docker-compose.yml` 的 `volumes` | 例如与宿主机其它项目目录同路径挂载，镜像不提供 OpenClaw 专用变量 |
 
@@ -222,6 +222,8 @@ docker compose pull && docker compose up -d
 - `${DATA_ROOT}/user-init.sh` 若存在会在启动时执行。
 - 需要与**其它栈**共享某宿主机路径（例如自建 agent 的工作区）时，在 `docker-compose.yml` 里**自行**增加 `volumes` 即可；镜像不再提供 `MOUNT_OPENCLAW` 等专用变量。
 
+**绑定挂载与权限**：`~/.claude`、`~/.agents` 等指向 `${DATA_ROOT}/config/...`。若在宿主机上预先创建了这些目录且属主为 **root**，早期镜像可能出现 **`EACCES`（无法创建 `~/.claude/plugins`、skills 安装失败）**。当前 `entrypoint` 会在启动时对 `${DATA_ROOT}/config/claude`、`codex`、`agents`、`superpowers` 及 **`project`** 执行 **`chown -R node:node`**（容器内 uid **1000**）。若你仍在使用旧镜像，可在宿主机执行一次 `chown -R 1000:1000 <DATA_ROOT>/config ...` 后重启容器，或 **`docker compose pull && docker compose up -d --force-recreate`** 拉到新构建。
+
 ### 1Panel / `DATA_ROOT` 在 `/root/...` 下
 
 面板常把应用数据放在 root 家目录下。Debian 系镜像里 **`/root` 默认 0700**，容器内用户 **`node`（uid 1000）无法进入**其子路径，CloudCLI、写 `DATA_ROOT` 会报权限错误。
@@ -240,47 +242,31 @@ docker compose pull && docker compose up -d
 
 ### Compose Template
 
-仓库内已经提供可直接使用的 [docker-compose.yml](./docker-compose.yml)。
-如果你想复制一份最常用的公开镜像编排模板，可以使用下面这个版本：
+**请以仓库根目录 [docker-compose.yml](./docker-compose.yml) 为准**：它与 [.env.example](./.env.example) 一致，通过 `environment` 逐项引用变量；在同一目录放置 `.env` 时，Compose 会自动用其做 **`${VAR}` 替换**（无需再写 `env_file`，以免与文档/CI 行为不一致）。
+
+若仅快速扫一眼结构，等价于（与仓库文件同步维护，节选）：
 
 ```yaml
 services:
   coding-agent:
-    image: ghcr.io/moshall/coding_agent_docker:latest
-    container_name: coding-agent
+    image: ${DOCKER_IMAGE:-ghcr.io/moshall/coding_agent_docker:latest}
+    container_name: ${CONTAINER_NAME:-coding-agent}
     restart: unless-stopped
-
-    env_file:
-      - .env
-
     environment:
-      - DATA_ROOT=/data/coding-agent
-      - TZ=Asia/Shanghai
-      - NODE_ENV=development
-      - GOPATH=/home/node/go
-      - GOCACHE=/home/node/.cache/go-build
-      - INSTALL_GO_RUNTIME=
-      - INSTALL_BUILD_ESSENTIAL=
-      # CloudCLI（claudecodeui）；默认同仓库 docker-compose.yml
-      - CLOUDCLI_ENABLE=${CLOUDCLI_ENABLE:-true}
-      - CLOUDCLI_PORT=${CLOUDCLI_PORT:-3001}
-
+      - TZ=${TZ:-Asia/Shanghai}
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATA_ROOT=${DATA_ROOT:-/data/coding-agent}
+      # …其余键名见仓库 docker-compose.yml（ANTHROPIC_*、OPENAI_*、CLOUDCLI_*、SUPERPOWERS_*、PORT_* 等）
     volumes:
-      - /data/coding-agent:/data/coding-agent
-
+      - ${DATA_ROOT:-/data/coding-agent}:${DATA_ROOT:-/data/coding-agent}
     ports:
-      # 与仓库 docker-compose.yml 一致：宿主机端口可用 PORT_*，CloudCLI 容器内端口为 CLOUDCLI_PORT
       - "${PORT_CC_CONNECT:-8080}:8080"
       - "${PORT_RALPH:-3000}:3000"
       - "${PORT_CLOUDCLI:-3001}:${CLOUDCLI_PORT:-3001}"
       - "${PORT_DEV:-9000}:9000"
-
-    cap_add:
-      - NET_ADMIN
-
+    cap_add: [NET_ADMIN]
     devices:
       - /dev/net/tun:/dev/net/tun
-
     stdin_open: true
     tty: true
 ```
@@ -288,6 +274,7 @@ services:
 启动：
 
 ```bash
+cp .env.example .env   # 编辑密钥与 DATA_ROOT
 docker compose up -d
 ```
 
@@ -437,6 +424,7 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.versi
 - CLI 可用性回归
 - 配置生成回归
 - 持久化、`user-init.sh`、端口与技能初始化回归
+- `node` 用户对 `~/.claude`、`~/.agents/skills` 可写（绑定挂载权限回归，避免 Claude 插件 / `npx skills` EACCES）
 
 ### Tag Strategy
 
@@ -466,7 +454,7 @@ docker compose -f /path/to/docker-compose.yml exec coding-agent bash
 
 ### 容器启动了，但没有 Web 页面
 
-这是预期行为。这个镜像的默认定位是通用 CLI 工作容器，端口只是预留映射，不代表默认就有某个 Web 服务在监听。
+默认会启动 **CloudCLI**（`CLOUDCLI_ENABLE` 默认为真），一般可访问**宿主机映射的 `PORT_CLOUDCLI`（默认 3001）**。若你显式关闭了 CloudCLI，或端口未映射 / 安全组未放行，则仍可能看不到页面；其它端口（如 `8080`、`9000`）未必有进程监听。
 
 ### `ccman` 配置后看起来没生效
 
@@ -483,6 +471,17 @@ docker compose -f /path/to/docker-compose.yml exec coding-agent bash
 ### Tailscale 无法启动
 
 请确认宿主机提供了 `NET_ADMIN` 能力和 `/dev/net/tun` 设备；某些受限环境或 CI runner 不具备这些条件。
+
+### Claude `superpowers` 插件装不上 / `claude plugin list` 为空
+
+1. 确认容器能出网，且 `SUPERPOWERS_CLAUDE_PLUGIN_ENABLE` 不为 `false`。  
+2. 看 **`/var/log/entrypoint-skills.log`**：若出现 **`EACCES`** 写入 `~/.claude/plugins`，多为 `${DATA_ROOT}/config/*` 在宿主机上属主为 root——请升级到当前镜像或使用「持久化」小节中的 **`chown 1000:1000`** 修复后再 `docker compose up -d --force-recreate`。  
+3. 若日志提示 **`not found in marketplace claude-plugins-official`**：新镜像会优先走 **`obra/superpowers-marketplace`**；仍失败时请对照 [obra/superpowers 安装说明](https://github.com/obra/superpowers#claude-code-official-marketplace) 在容器内手动重试。  
+4. 可用 **`scripts/verify-superpowers-claude-plugin.sh`** 做一键核对。
+
+### `npx skills` / Codex 技能安装报 `EACCES`
+
+与上类似：确保 **`${DATA_ROOT}/config/claude`**、**`config/agents`**、**`config/codex`** 对容器内 **uid 1000** 可写；推荐拉最新镜像或宿主机 `chown -R 1000:1000` 对应目录后重建容器。
 
 ## Related Docs
 
