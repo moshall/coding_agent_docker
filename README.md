@@ -123,16 +123,16 @@ docker compose up -d
 
 ### 3. Enter the Container
 
-推荐直接以 `node` 用户进入：
-
-```bash
-docker compose exec --user node -e NODE_ENV=production coding-agent bash
-```
-
-如果你用的是 `docker exec`：
+推荐直接以 `node` 用户进入，并加上 **`-it`**（交互式 + 伪终端），便于 TUI、颜色与 `bash` 行编辑：
 
 ```bash
 docker exec -it --user node -e NODE_ENV=production coding-agent bash
+```
+
+若在项目目录使用 Compose，等价写法：
+
+```bash
+docker compose exec -it --user node -e NODE_ENV=production coding-agent bash
 ```
 
 ### 4. Smoke Check
@@ -313,10 +313,16 @@ docker run -d --name coding-agent \
 
 ### Enter Shell
 
-默认 `docker exec` 常常以 `root` 进入，但这个镜像推荐把日常操作落在 `node` 用户下：
+默认 `docker exec` 常常以 `root` 进入，但这个镜像推荐把日常操作落在 `node` 用户下。进入交互 shell 时请加上 **`-it`**，否则容易出现无行编辑、部分 CLI 排版异常等问题：
 
 ```bash
-docker compose exec --user node -e NODE_ENV=production coding-agent bash
+docker exec -it --user node -e NODE_ENV=production coding-agent bash
+```
+
+若在编排目录下使用 Compose：
+
+```bash
+docker compose exec -it --user node -e NODE_ENV=production coding-agent bash
 ```
 
 说明：
@@ -362,7 +368,7 @@ ccman cx current
 如果你只是想直接打开交互界面：
 
 ```bash
-docker compose exec coding-agent ccman
+docker compose exec -it coding-agent ccman
 ```
 
 ### Check Runtime Version
@@ -449,7 +455,7 @@ docker pull ghcr.io/moshall/coding_agent_docker:v1.0.1
 你需要在包含 `docker-compose.yml` 的目录执行，或者显式指定文件：
 
 ```bash
-docker compose -f /path/to/docker-compose.yml exec coding-agent bash
+docker compose -f /path/to/docker-compose.yml exec -it coding-agent bash
 ```
 
 ### 容器启动了，但没有 Web 页面
