@@ -179,6 +179,8 @@ COPY docker/npm-required.txt /tmp/npm-required.txt
 COPY docker/npm-optional.txt /tmp/npm-optional.txt
 COPY docker/resolve-npm-versions.sh /tmp/resolve-npm-versions.sh
 RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends make g++; \
     chmod +x /tmp/resolve-npm-versions.sh; \
     TOOL_VERSION_CHANNEL="${TOOL_VERSION_CHANNEL}" \
     CLAUDE_CODE_VERSION="${CLAUDE_CODE_VERSION}" \
@@ -203,6 +205,8 @@ RUN set -eux; \
     if [ -d /usr/local/lib/node_modules/@siteboon/claude-code-ui ] && [ ! -f /usr/local/lib/node_modules/@siteboon/claude-code-ui/.env ]; then \
       touch /usr/local/lib/node_modules/@siteboon/claude-code-ui/.env; \
     fi; \
+    apt-get purge -y --auto-remove make g++; \
+    rm -rf /var/lib/apt/lists/*; \
     rm -f /tmp/npm-required.txt /tmp/npm-required-resolved.txt /tmp/npm-optional.txt /tmp/resolve-npm-versions.sh
 
 COPY --from=go-builder /build/cc-connect /usr/local/bin/cc-connect
