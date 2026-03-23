@@ -89,6 +89,9 @@ bash tests/run-all.sh
 | TC-TOOL-10 | Dockerfile 安装 `cloudcli-wrapper.sh` |
 | TC-TOOL-11 | entrypoint 传递 `WORKSPACES_ROOT` |
 | TC-TOOL-12 | `cloudcli-wrapper` 包含 Python socket 端口检测兜底 |
+| TC-TOOL-13 | Dockerfile 定义 `BWRAP_BUILD_VERSION`（bwrap 兼容兜底版本） |
+| TC-TOOL-14 | Dockerfile 校验 `bwrap` 支持 `--argv0` |
+| TC-TOOL-15 | BOM 记录 `bwrap --version` |
 
 ---
 
@@ -121,6 +124,14 @@ bash tests/run-all.sh
 | TC-CONFIGCLI-23 | 服务控制包含 `Stop service` |
 | TC-CONFIGCLI-24 | 服务控制包含 `Restart service` |
 | TC-CONFIGCLI-25 | 服务控制包含 `Show recent logs` |
+| TC-CONFIGCLI-26 | 健康检查包含 `bwrap supports --argv0` |
+| TC-CONFIGCLI-27 | 主菜单包含 `cc-connect config manager` |
+| TC-CONFIGCLI-28 | 配置管理包含 `List projects` |
+| TC-CONFIGCLI-29 | 配置管理包含 `Edit project` |
+| TC-CONFIGCLI-30 | 配置管理包含 `Delete project` |
+| TC-CONFIGCLI-31 | 主菜单包含 `Language / 语言` |
+| TC-CONFIGCLI-32 | 语言菜单包含 `中文` |
+| TC-CONFIGCLI-33 | 语言菜单包含 `English` |
 
 ---
 
@@ -228,6 +239,7 @@ bash tests/run-all.sh
 | TC-HEALTH-04 | 包含 `cloudcli HTTP` 检查 |
 | TC-HEALTH-05 | 包含 `tailscaled process` 检查 |
 | TC-HEALTH-06 | cloudcli 端口检测含 Python socket 兜底 |
+| TC-HEALTH-07 | 包含 `bubblewrap supports --argv0` 检查 |
 
 ---
 

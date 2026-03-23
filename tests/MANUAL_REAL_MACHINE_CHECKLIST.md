@@ -73,6 +73,7 @@ bash tests/run-all.sh
 | D-2.14 | tmux | `tmux -V` |
 | D-2.15 | tailscale CLI | `tailscale version` |
 | D-2.16 | Python 科学栈 | 容器内 `python3 -c "import pandas, matplotlib, seaborn, scipy; print('ok')"` |
+| D-2.17 | bwrap 兼容性 | `docker exec coding-agent sh -lc 'bwrap --version && bwrap --help | grep -- --argv0'` |
 
 ### D.3 配置文件生成（≈CI）
 

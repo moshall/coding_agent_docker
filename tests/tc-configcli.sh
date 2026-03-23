@@ -28,5 +28,13 @@ run_check "TC-CONFIGCLI-22 service control supports start action" grep -Fq "Star
 run_check "TC-CONFIGCLI-23 service control supports stop action" grep -Fq "Stop service" codingagentconfig.sh
 run_check "TC-CONFIGCLI-24 service control supports restart action" grep -Fq "Restart service" codingagentconfig.sh
 run_check "TC-CONFIGCLI-25 service control supports log view action" grep -Fq "Show recent logs" codingagentconfig.sh
+run_check "TC-CONFIGCLI-26 health check validates bwrap argv0 compatibility" grep -Fq "bwrap supports --argv0" codingagentconfig.sh
+run_check "TC-CONFIGCLI-27 menu has cc-connect config manager entry" grep -Fq "cc-connect config manager" codingagentconfig.sh
+run_check "TC-CONFIGCLI-28 config manager supports project list" grep -Fq "List projects" codingagentconfig.sh
+run_check "TC-CONFIGCLI-29 config manager supports project edit" grep -Fq "Edit project" codingagentconfig.sh
+run_check "TC-CONFIGCLI-30 config manager supports project delete" grep -Fq "Delete project" codingagentconfig.sh
+run_check "TC-CONFIGCLI-31 menu has language switch entry" grep -Fq "Language / 语言" codingagentconfig.sh
+run_check "TC-CONFIGCLI-32 language menu supports Chinese" grep -Fq "中文" codingagentconfig.sh
+run_check "TC-CONFIGCLI-33 language menu supports English" grep -Fq "English" codingagentconfig.sh
 
 summary_and_exit

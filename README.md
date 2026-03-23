@@ -144,6 +144,8 @@ docker compose exec -it --user node -e NODE_ENV=production coding-agent bash
 # 也可手工检查关键 CLI
 claude --version
 codex --version
+bwrap --version
+bwrap --help | grep -- --argv0
 task-master --version
 ccman --version
 # 若自行全局安装：gemini --version / opencode --version
@@ -474,10 +476,12 @@ docker compose exec -it coding-agent ccman
 - `1` 快捷配置服务商：直接进入 `ccman`
 - `2` 检查更新：查看 `codex`、`claude code`、`claudecodeui`、`ccman`、`cc-connect` 是否有新版，并可直接触发更新
 - `3` 新增工作区：在 `/home/node/project` 下创建英文名目录（含重名检测）
-- `4` 健康状态：显示 `cron`、`tailscaled`、`cloudcli` 的运行检查结果（`PASS/FAIL/SKIP`）
+- `4` 健康状态：显示 `cron`、`tailscaled`、`cloudcli` 以及 `bwrap --argv0` 兼容性检查结果（`PASS/FAIL/SKIP`）
 - `5` cc-connect 快速绑定：按向导绑定项目目录 + 聊天渠道（`Telegram` / `Discord` / `Feishu`），并写入 `~/.cc-connect/config.toml`（支持 `CC_CONNECT_CONFIG_PATH` 覆盖）
 - `6` cc-connect 连接自检：检查配置文件、凭据字段、`work_dir`、进程状态与端口监听，一键定位常见故障
 - `7` cc-connect 服务控制：支持 `start/stop/restart` 和日志查看，方便在菜单里直接拉起或排障
+- `8` cc-connect 配置管理：支持项目列表、详情查看、配置编辑、删除错误项目，避免“配错后只能手改文件”
+- `9` Language / 语言：支持中英文切换（含自动跟随系统语言），设置会写入 `~/.config/codingagentconfig/lang`
 
 示例：
 
@@ -624,6 +628,25 @@ docker compose -f /path/to/docker-compose.yml exec -it coding-agent bash
 
 通常不是安装失败，而是容器启动时已自动拉起 CloudCLI（默认 `3001`）。新镜像内 `cloudcli` 包装器会在检测到端口已监听时直接提示并退出，避免重复启动报错。若你要手动拉起实例，请先设 `CLOUDCLI_ENABLE=false` 后重建容器，再进入容器执行 `cloudcli`。
 
+### Codex 调终端时报 `bwrap: Unknown option --argv0`
+
+这是系统 `bwrap` 版本过旧导致（常见于 Debian 11/12 的旧包）。Codex 新版本 Linux sandbox 会用到 `--argv0` 参数。
+
+本镜像构建期已加兜底：若系统 `bwrap` 不支持 `--argv0`，会自动从上游源码编译兼容版本并覆盖 `/usr/bin/bwrap`。你可在容器里快速确认：
+
+```bash
+bwrap --version
+bwrap --help | grep -- --argv0
+```
+
+如果仍报错，先运行：
+
+```bash
+./scripts/healthcheck.sh coding-agent
+```
+
+确认 `bubblewrap supports --argv0` 为 `PASS`，再继续排查环境差异（例如自定义基础镜像或手工替换过 `/usr/bin/bwrap`）。
+
 ### CloudCLI 创建项目只能看到 `/home/node`
 
 CloudCLI（claudecodeui）默认会把工作区根限制在 `WORKSPACES_ROOT`（未设置时通常是当前用户 `HOME`）。本镜像已默认设置 `CLOUDCLI_WORKSPACES_ROOT=/home/node`，并把 `${DATA_ROOT}/project` 直接绑定到 `/home/node/project`，因此可管理：
@@ -666,7 +689,7 @@ CloudCLI（claudecodeui）默认会把工作区根限制在 `WORKSPACES_ROOT`（
 - [docker-compose.yml](./docker-compose.yml): 默认部署编排
 - [docker-compose.dev.yml](./docker-compose.dev.yml): 本地构建与 CI 回归编排
 - [.env.example](./.env.example): 环境变量模板
-- [scripts/healthcheck.sh](./scripts/healthcheck.sh): 宿主机一键健康检查（容器状态/cron/cloudcli/tailscaled）
+- [scripts/healthcheck.sh](./scripts/healthcheck.sh): 宿主机一键健康检查（容器状态/cron/cloudcli/tailscaled/bwrap）
 - [user-init.sh.example](./user-init.sh.example): 自定义启动脚本示例
 - [CHANGELOG.md](./CHANGELOG.md): 版本变更记录
 - [UPGRADING.md](./UPGRADING.md): 升级说明

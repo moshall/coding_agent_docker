@@ -18,9 +18,70 @@ declare -a TOOL_LATEST=()
 declare -a TOOL_STATUS=()
 declare -a TOOL_CAN_UPDATE=()
 
+LANGUAGE_CONFIG_FILE_DEFAULT="${HOME:-/home/node}/.config/codingagentconfig/lang"
+APP_LANG_SETTING="${CODINGAGENTCONFIG_LANG:-auto}"
+APP_LANG_EFFECTIVE="en"
+
+detect_locale_language() {
+  local lang_raw="${LANG:-en}"
+  lang_raw="$(printf '%s' "${lang_raw}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${lang_raw}" == zh* ]]; then
+    printf '%s' "zh"
+  else
+    printf '%s' "en"
+  fi
+}
+
+load_language_setting() {
+  local cfg_file="${CODINGAGENTCONFIG_LANG_FILE:-${LANGUAGE_CONFIG_FILE_DEFAULT}}"
+  local loaded="${APP_LANG_SETTING}"
+
+  if [[ -f "${cfg_file}" ]]; then
+    local from_file
+    from_file="$(head -n 1 "${cfg_file}" 2>/dev/null | tr -d '[:space:]')"
+    case "${from_file}" in
+      auto|zh|en)
+        loaded="${from_file}"
+        ;;
+    esac
+  fi
+
+  case "${loaded}" in
+    auto|"")
+      APP_LANG_SETTING="auto"
+      APP_LANG_EFFECTIVE="$(detect_locale_language)"
+      ;;
+    zh|en)
+      APP_LANG_SETTING="${loaded}"
+      APP_LANG_EFFECTIVE="${loaded}"
+      ;;
+    *)
+      APP_LANG_SETTING="auto"
+      APP_LANG_EFFECTIVE="$(detect_locale_language)"
+      ;;
+  esac
+}
+
+save_language_setting() {
+  local setting="$1"
+  local cfg_file="${CODINGAGENTCONFIG_LANG_FILE:-${LANGUAGE_CONFIG_FILE_DEFAULT}}"
+  mkdir -p "$(dirname "${cfg_file}")" >/dev/null 2>&1 || return 1
+  printf '%s\n' "${setting}" >"${cfg_file}"
+}
+
+t() {
+  local zh="$1"
+  local en="$2"
+  if [[ "${APP_LANG_EFFECTIVE}" == "zh" ]]; then
+    printf '%s' "${zh}"
+  else
+    printf '%s' "${en}"
+  fi
+}
+
 pause() {
   echo
-  read -r -p "Press Enter to continue..."
+  read -r -p "$(t "按回车继续..." "Press Enter to continue...")" _
 }
 
 trim() {
@@ -252,6 +313,14 @@ read_required_input() {
 }
 
 select_claudecode_mode() {
+  local default_mode="${1:-default}"
+  local default_choice="1"
+  case "${default_mode}" in
+    default) default_choice="1" ;;
+    acceptEdits) default_choice="2" ;;
+    plan) default_choice="3" ;;
+    bypassPermissions) default_choice="4" ;;
+  esac
   local mode_choice=""
   while true; do
     echo >&2
@@ -260,10 +329,10 @@ select_claudecode_mode() {
     echo "2. acceptEdits" >&2
     echo "3. plan" >&2
     echo "4. bypassPermissions" >&2
-    read -r -p "Select mode [1]: " mode_choice
+    read -r -p "Select mode [${default_choice}]: " mode_choice
     mode_choice="$(trim "${mode_choice}")"
     if [[ -z "${mode_choice}" ]]; then
-      mode_choice="1"
+      mode_choice="${default_choice}"
     fi
     case "${mode_choice}" in
       1)
@@ -290,6 +359,14 @@ select_claudecode_mode() {
 }
 
 select_codex_mode() {
+  local default_mode="${1:-suggest}"
+  local default_choice="1"
+  case "${default_mode}" in
+    suggest) default_choice="1" ;;
+    auto-edit) default_choice="2" ;;
+    full-auto) default_choice="3" ;;
+    yolo) default_choice="4" ;;
+  esac
   local mode_choice=""
   while true; do
     echo >&2
@@ -298,10 +375,10 @@ select_codex_mode() {
     echo "2. auto-edit" >&2
     echo "3. full-auto" >&2
     echo "4. yolo" >&2
-    read -r -p "Select mode [1]: " mode_choice
+    read -r -p "Select mode [${default_choice}]: " mode_choice
     mode_choice="$(trim "${mode_choice}")"
     if [[ -z "${mode_choice}" ]]; then
-      mode_choice="1"
+      mode_choice="${default_choice}"
     fi
     case "${mode_choice}" in
       1)
@@ -327,63 +404,283 @@ select_codex_mode() {
   done
 }
 
+render_cc_connect_project_block() {
+  local project_name="$1"
+  local agent_type="$2"
+  local agent_mode="$3"
+  local work_dir="$4"
+  local platform_type="$5"
+  local admin_from="$6"
+  local allow_from="$7"
+  local secret_a="$8"
+  local secret_b="$9"
+  local guild_id="${10}"
+  local thread_isolation="${11}"
+  local enable_feishu_card="${12}"
+
+  echo
+  echo "[[projects]]"
+  echo "name = \"$(toml_escape "${project_name}")\""
+  if [[ -n "${admin_from}" ]]; then
+    echo "admin_from = \"$(toml_escape "${admin_from}")\""
+  fi
+  echo
+  echo "[projects.agent]"
+  echo "type = \"${agent_type}\""
+  echo
+  echo "[projects.agent.options]"
+  echo "work_dir = \"$(toml_escape "${work_dir}")\""
+  echo "mode = \"${agent_mode}\""
+  echo
+  echo "[[projects.platforms]]"
+  echo "type = \"${platform_type}\""
+  echo
+  echo "[projects.platforms.options]"
+
+  case "${platform_type}" in
+    telegram)
+      echo "token = \"$(toml_escape "${secret_a}")\""
+      ;;
+    discord)
+      echo "token = \"$(toml_escape "${secret_a}")\""
+      if [[ -n "${guild_id}" ]]; then
+        echo "guild_id = \"$(toml_escape "${guild_id}")\""
+      fi
+      echo "thread_isolation = ${thread_isolation}"
+      ;;
+    feishu)
+      echo "app_id = \"$(toml_escape "${secret_a}")\""
+      echo "app_secret = \"$(toml_escape "${secret_b}")\""
+      echo "enable_feishu_card = ${enable_feishu_card}"
+      ;;
+  esac
+
+  if [[ -n "${allow_from}" ]]; then
+    echo "allow_from = \"$(toml_escape "${allow_from}")\""
+  fi
+}
+
 append_cc_connect_project() {
   local cfg="$1"
-  local project_name="$2"
-  local agent_type="$3"
-  local agent_mode="$4"
-  local work_dir="$5"
-  local platform_type="$6"
-  local admin_from="$7"
-  local allow_from="$8"
-  local secret_a="$9"
-  local secret_b="${10}"
-  local guild_id="${11}"
-  local thread_isolation="${12}"
-  local enable_feishu_card="${13}"
+  shift
+  render_cc_connect_project_block "$@" >>"${cfg}"
+}
 
-  {
-    echo
-    echo "[[projects]]"
-    echo "name = \"$(toml_escape "${project_name}")\""
-    if [[ -n "${admin_from}" ]]; then
-      echo "admin_from = \"$(toml_escape "${admin_from}")\""
+cc_connect_project_ranges() {
+  local cfg="$1"
+  awk '
+    BEGIN { idx=0; start=0; name="" }
+    /^[ \t]*\[\[projects\]\][ \t]*$/ {
+      if (start > 0) {
+        end = NR - 1
+        printf "%d|%d|%d|%s\n", idx, start, end, name
+      }
+      idx += 1
+      start = NR
+      name = ""
+      next
+    }
+    start > 0 && name == "" {
+      line = $0
+      sub(/#.*/, "", line)
+      if (line ~ /^[ \t]*name[ \t]*=[ \t]*"/) {
+        sub(/^[ \t]*name[ \t]*=[ \t]*"/, "", line)
+        sub(/"[ \t]*$/, "", line)
+        name = line
+      }
+    }
+    END {
+      if (start > 0) {
+        printf "%d|%d|%d|%s\n", idx, start, NR, name
+      }
+    }
+  ' "${cfg}"
+}
+
+cc_connect_get_project_range() {
+  local cfg="$1"
+  local target_idx="$2"
+  local idx start end name
+  while IFS='|' read -r idx start end name; do
+    if [[ "${idx}" == "${target_idx}" ]]; then
+      printf '%s|%s|%s\n' "${start}" "${end}" "${name}"
+      return 0
     fi
-    echo
-    echo "[projects.agent]"
-    echo "type = \"${agent_type}\""
-    echo
-    echo "[projects.agent.options]"
-    echo "work_dir = \"$(toml_escape "${work_dir}")\""
-    echo "mode = \"${agent_mode}\""
-    echo
-    echo "[[projects.platforms]]"
-    echo "type = \"${platform_type}\""
-    echo
-    echo "[projects.platforms.options]"
+  done < <(cc_connect_project_ranges "${cfg}")
+  return 1
+}
 
-    case "${platform_type}" in
-      telegram)
-        echo "token = \"$(toml_escape "${secret_a}")\""
-        ;;
-      discord)
-        echo "token = \"$(toml_escape "${secret_a}")\""
-        if [[ -n "${guild_id}" ]]; then
-          echo "guild_id = \"$(toml_escape "${guild_id}")\""
-        fi
-        echo "thread_isolation = ${thread_isolation}"
-        ;;
-      feishu)
-        echo "app_id = \"$(toml_escape "${secret_a}")\""
-        echo "app_secret = \"$(toml_escape "${secret_b}")\""
-        echo "enable_feishu_card = ${enable_feishu_card}"
-        ;;
-    esac
+cc_connect_replace_project_block() {
+  local cfg="$1"
+  local start="$2"
+  local end="$3"
+  shift 3
 
-    if [[ -n "${allow_from}" ]]; then
-      echo "allow_from = \"$(toml_escape "${allow_from}")\""
+  local tmp
+  tmp="$(mktemp)"
+
+  if (( start > 1 )); then
+    sed -n "1,$((start - 1))p" "${cfg}" >"${tmp}"
+  fi
+  render_cc_connect_project_block "$@" >>"${tmp}"
+  sed -n "$((end + 1)),\$p" "${cfg}" >>"${tmp}"
+
+  mv "${tmp}" "${cfg}"
+}
+
+cc_connect_delete_project_block() {
+  local cfg="$1"
+  local start="$2"
+  local end="$3"
+  local tmp
+  tmp="$(mktemp)"
+
+  if (( start > 1 )); then
+    sed -n "1,$((start - 1))p" "${cfg}" >"${tmp}"
+  fi
+  sed -n "$((end + 1)),\$p" "${cfg}" >>"${tmp}"
+
+  mv "${tmp}" "${cfg}"
+}
+
+cc_block_key_in_header() {
+  local block="$1"
+  local header="$2"
+  local key="$3"
+  printf '%s\n' "${block}" | awk -v header="${header}" -v key="${key}" '
+    BEGIN { inside=0 }
+    {
+      line = $0
+      sub(/#.*/, "", line)
+      gsub(/\r/, "", line)
+      trimmed = line
+      sub(/^[ \t]+/, "", trimmed)
+      sub(/[ \t]+$/, "", trimmed)
+      if (trimmed == header) {
+        inside = 1
+        next
+      }
+      if (inside && trimmed ~ /^\[/) {
+        inside = 0
+      }
+      if (!inside) {
+        next
+      }
+      pattern = "^[ \t]*" key "[ \t]*=[ \t]*\""
+      if (line ~ pattern) {
+        sub(pattern, "", line)
+        sub(/"[ \t]*$/, "", line)
+        print line
+        exit
+      }
+    }
+  '
+}
+
+cc_block_bool_in_header() {
+  local block="$1"
+  local header="$2"
+  local key="$3"
+  printf '%s\n' "${block}" | awk -v header="${header}" -v key="${key}" '
+    BEGIN { inside=0 }
+    {
+      line = $0
+      sub(/#.*/, "", line)
+      gsub(/\r/, "", line)
+      trimmed = line
+      sub(/^[ \t]+/, "", trimmed)
+      sub(/[ \t]+$/, "", trimmed)
+      if (trimmed == header) {
+        inside = 1
+        next
+      }
+      if (inside && trimmed ~ /^\[/) {
+        inside = 0
+      }
+      if (!inside) {
+        next
+      }
+      pattern = "^[ \t]*" key "[ \t]*=[ \t]*"
+      if (line ~ pattern) {
+        sub(pattern, "", line)
+        sub(/[ \t]+$/, "", line)
+        print line
+        exit
+      }
+    }
+  '
+}
+
+cc_block_top_quoted_key() {
+  local block="$1"
+  local key="$2"
+  printf '%s\n' "${block}" | awk -v key="${key}" '
+    {
+      line = $0
+      sub(/#.*/, "", line)
+      gsub(/\r/, "", line)
+      trimmed = line
+      sub(/^[ \t]+/, "", trimmed)
+      sub(/[ \t]+$/, "", trimmed)
+      if (trimmed ~ /^\[/) {
+        exit
+      }
+      pattern = "^[ \t]*" key "[ \t]*=[ \t]*\""
+      if (line ~ pattern) {
+        sub(pattern, "", line)
+        sub(/"[ \t]*$/, "", line)
+        print line
+        exit
+      }
+    }
+  '
+}
+
+mask_secret() {
+  local raw="$1"
+  local n="${#raw}"
+  if (( n == 0 )); then
+    printf '%s' "(empty)"
+  elif (( n <= 8 )); then
+    printf '%s' "****"
+  else
+    printf '%s' "${raw:0:4}****${raw:n-2:2}"
+  fi
+}
+
+cc_connect_project_exists_except_index() {
+  local cfg="$1"
+  local name="$2"
+  local exclude_idx="$3"
+  local idx _ _ existing_name
+  while IFS='|' read -r idx _ _ existing_name; do
+    if [[ "${idx}" != "${exclude_idx}" && "${existing_name}" == "${name}" ]]; then
+      return 0
     fi
-  } >>"${cfg}"
+  done < <(cc_connect_project_ranges "${cfg}")
+  return 1
+}
+
+prompt_project_index() {
+  local cfg="$1"
+  local prompt_text="$2"
+  local pick=""
+  while true; do
+    read -r -p "${prompt_text}" pick
+    pick="$(trim "${pick}")"
+    if [[ -z "${pick}" ]]; then
+      return 1
+    fi
+    if ! [[ "${pick}" =~ ^[0-9]+$ ]]; then
+      echo "Invalid number."
+      continue
+    fi
+    if cc_connect_get_project_range "${cfg}" "${pick}" >/dev/null; then
+      printf '%s' "${pick}"
+      return 0
+    fi
+    echo "Project index not found."
+  done
 }
 
 cc_validate_platform_credentials() {
@@ -792,6 +1089,12 @@ menu_health_status() {
   health_check "pid1 process exists" "ps -p 1 >/dev/null"
   health_check "cron process" "pgrep -x cron >/dev/null"
 
+  if have_cmd bwrap; then
+    health_check "bwrap supports --argv0" "bwrap --help 2>/dev/null | grep -q -- --argv0"
+  else
+    health_skip "bwrap supports --argv0 (bwrap missing; Codex may use vendored bwrap)"
+  fi
+
   if have_cmd tailscaled; then
     if [[ -e /dev/net/tun ]]; then
       health_check "tailscaled process" "pgrep -x tailscaled >/dev/null"
@@ -1133,6 +1436,464 @@ menu_cc_connect_self_check() {
   pause
 }
 
+cc_connect_print_project_list() {
+  local cfg="$1"
+  local has_any="0"
+  local idx start end name
+  while IFS='|' read -r idx start end name; do
+    has_any="1"
+    local block
+    block="$(sed -n "${start},${end}p" "${cfg}")"
+    local agent_type agent_mode work_dir platform_type
+    agent_type="$(cc_block_key_in_header "${block}" "[projects.agent]" "type")"
+    agent_mode="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "mode")"
+    work_dir="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "work_dir")"
+    platform_type="$(cc_block_key_in_header "${block}" "[[projects.platforms]]" "type")"
+    printf '%s) %s | %s(%s) | %s | %s\n' \
+      "${idx}" \
+      "${name:-unnamed}" \
+      "${agent_type:-unknown}" \
+      "${agent_mode:-unknown}" \
+      "${platform_type:-unknown}" \
+      "${work_dir:-unknown}"
+  done < <(cc_connect_project_ranges "${cfg}")
+
+  if [[ "${has_any}" != "1" ]]; then
+    echo "No projects configured."
+    return 1
+  fi
+  return 0
+}
+
+menu_cc_connect_project_detail() {
+  local cfg="$1"
+  if ! cc_connect_print_project_list "${cfg}"; then
+    pause
+    return 0
+  fi
+  echo
+  local pick
+  pick="$(prompt_project_index "${cfg}" "Select project index (blank to cancel): ")" || return 0
+
+  local range
+  range="$(cc_connect_get_project_range "${cfg}" "${pick}")" || return 0
+  IFS='|' read -r start end name <<<"${range}"
+
+  local block
+  block="$(sed -n "${start},${end}p" "${cfg}")"
+  local agent_type agent_mode work_dir platform_type admin_from allow_from
+  local token app_id app_secret guild_id thread_isolation enable_feishu_card
+
+  agent_type="$(cc_block_key_in_header "${block}" "[projects.agent]" "type")"
+  agent_mode="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "mode")"
+  work_dir="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "work_dir")"
+  platform_type="$(cc_block_key_in_header "${block}" "[[projects.platforms]]" "type")"
+  admin_from="$(cc_block_top_quoted_key "${block}" "admin_from")"
+  allow_from="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "allow_from")"
+  token="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "token")"
+  app_id="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "app_id")"
+  app_secret="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "app_secret")"
+  guild_id="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "guild_id")"
+  thread_isolation="$(cc_block_bool_in_header "${block}" "[projects.platforms.options]" "thread_isolation")"
+  enable_feishu_card="$(cc_block_bool_in_header "${block}" "[projects.platforms.options]" "enable_feishu_card")"
+
+  echo
+  echo "=== Project detail ==="
+  echo "Index: ${pick}"
+  echo "Name: ${name}"
+  echo "Agent: ${agent_type}"
+  echo "Mode: ${agent_mode}"
+  echo "Work dir: ${work_dir}"
+  echo "Platform: ${platform_type}"
+  if [[ -n "${admin_from}" ]]; then
+    echo "Admin users: ${admin_from}"
+  else
+    echo "Admin users: (not set)"
+  fi
+  if [[ -n "${allow_from}" ]]; then
+    echo "Allow users: ${allow_from}"
+  else
+    echo "Allow users: (not set)"
+  fi
+  case "${platform_type}" in
+    telegram)
+      echo "Telegram token: $(mask_secret "${token}")"
+      ;;
+    discord)
+      echo "Discord token: $(mask_secret "${token}")"
+      if [[ -n "${guild_id}" ]]; then
+        echo "Discord guild_id: ${guild_id}"
+      else
+        echo "Discord guild_id: (not set)"
+      fi
+      echo "Thread isolation: ${thread_isolation:-false}"
+      ;;
+    feishu)
+      echo "Feishu app_id: ${app_id:-"(not set)"}"
+      echo "Feishu app_secret: $(mask_secret "${app_secret}")"
+      echo "Enable Feishu card: ${enable_feishu_card:-true}"
+      ;;
+  esac
+  pause
+}
+
+menu_cc_connect_edit_project() {
+  local cfg="$1"
+  if ! cc_connect_print_project_list "${cfg}"; then
+    pause
+    return 0
+  fi
+  echo
+  local pick
+  pick="$(prompt_project_index "${cfg}" "Select project index to edit (blank to cancel): ")" || return 0
+
+  local range
+  range="$(cc_connect_get_project_range "${cfg}" "${pick}")" || return 0
+  local start end current_name
+  IFS='|' read -r start end current_name <<<"${range}"
+  local block
+  block="$(sed -n "${start},${end}p" "${cfg}")"
+
+  local agent_type agent_mode work_dir platform_type admin_from allow_from
+  local token app_id app_secret guild_id thread_isolation enable_feishu_card
+
+  agent_type="$(cc_block_key_in_header "${block}" "[projects.agent]" "type")"
+  agent_mode="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "mode")"
+  work_dir="$(cc_block_key_in_header "${block}" "[projects.agent.options]" "work_dir")"
+  platform_type="$(cc_block_key_in_header "${block}" "[[projects.platforms]]" "type")"
+  admin_from="$(cc_block_top_quoted_key "${block}" "admin_from")"
+  allow_from="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "allow_from")"
+  token="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "token")"
+  app_id="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "app_id")"
+  app_secret="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "app_secret")"
+  guild_id="$(cc_block_key_in_header "${block}" "[projects.platforms.options]" "guild_id")"
+  thread_isolation="$(cc_block_bool_in_header "${block}" "[projects.platforms.options]" "thread_isolation")"
+  enable_feishu_card="$(cc_block_bool_in_header "${block}" "[projects.platforms.options]" "enable_feishu_card")"
+  thread_isolation="${thread_isolation:-false}"
+  enable_feishu_card="${enable_feishu_card:-true}"
+
+  echo
+  echo "Editing project #${pick}: ${current_name}"
+
+  local project_name="${current_name}"
+  local input=""
+  while true; do
+    read -r -p "Project name [${project_name}]: " input
+    input="$(trim "${input}")"
+    if [[ -n "${input}" ]]; then
+      project_name="${input}"
+    fi
+    if [[ -z "${project_name}" ]]; then
+      echo "Project name cannot be empty."
+      continue
+    fi
+    if ! [[ "${project_name}" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]]; then
+      echo "Invalid name. Use English letters, numbers, _ or -; start with a letter."
+      continue
+    fi
+    if cc_connect_project_exists_except_index "${cfg}" "${project_name}" "${pick}"; then
+      echo "Another project already uses this name: ${project_name}"
+      continue
+    fi
+    break
+  done
+
+  read -r -p "Agent type [${agent_type}] (claudecode/codex): " input
+  input="$(trim "${input}")"
+  if [[ -n "${input}" ]]; then
+    case "${input}" in
+      claudecode|codex)
+        agent_type="${input}"
+        ;;
+      *)
+        echo "Invalid agent type, keep current: ${agent_type}"
+        ;;
+    esac
+  fi
+
+  if [[ "${agent_type}" == "claudecode" ]]; then
+    if prompt_yes_no "Adjust Claude mode now? (Y/n):" "Y"; then
+      agent_mode="$(select_claudecode_mode "${agent_mode}")"
+    fi
+  else
+    if prompt_yes_no "Adjust Codex mode now? (Y/n):" "Y"; then
+      agent_mode="$(select_codex_mode "${agent_mode}")"
+    fi
+  fi
+
+  read -r -p "Project directory [${work_dir}]: " input
+  input="$(trim "${input}")"
+  if [[ -n "${input}" ]]; then
+    work_dir="${input}"
+  fi
+  if [[ "${work_dir}" != /* ]]; then
+    echo "Please use an absolute path."
+    pause
+    return 0
+  fi
+  if [[ ! -d "${work_dir}" ]]; then
+    if prompt_yes_no "Directory not found. Create it now? (Y/n):" "Y"; then
+      mkdir -p "${work_dir}" || {
+        echo "Failed to create directory: ${work_dir}"
+        pause
+        return 0
+      }
+      if [[ "$(id -u)" -eq 0 ]] && id node >/dev/null 2>&1; then
+        chown -R node:node "${work_dir}" || true
+      fi
+    else
+      echo "Cancelled: directory must exist."
+      pause
+      return 0
+    fi
+  fi
+
+  read -r -p "Admin users [${admin_from:-none}]: " input
+  input="$(trim "${input}")"
+  if [[ -n "${input}" ]]; then
+    admin_from="${input}"
+  fi
+
+  local platform_choice="1"
+  case "${platform_type}" in
+    telegram) platform_choice="1" ;;
+    discord) platform_choice="2" ;;
+    feishu) platform_choice="3" ;;
+  esac
+  echo
+  echo "Chat channel:"
+  echo "1. Telegram"
+  echo "2. Discord"
+  echo "3. Feishu"
+  read -r -p "Select channel [${platform_choice}]: " input
+  input="$(trim "${input}")"
+  if [[ -z "${input}" ]]; then
+    input="${platform_choice}"
+  fi
+  case "${input}" in
+    1) platform_type="telegram" ;;
+    2) platform_type="discord" ;;
+    3) platform_type="feishu" ;;
+    *)
+      echo "Invalid choice, keep current channel: ${platform_type}"
+      ;;
+  esac
+
+  local secret_a=""
+  local secret_b=""
+
+  case "${platform_type}" in
+    telegram)
+      read -r -s -p "Telegram bot token (leave blank to keep current): " input
+      echo
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        token="${input}"
+      fi
+      if [[ -z "${token}" ]]; then
+        echo "Token cannot be empty."
+        pause
+        return 0
+      fi
+      read -r -p "Allow users [${allow_from:-*}]: " input
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        allow_from="${input}"
+      fi
+      allow_from="${allow_from:-*}"
+      secret_a="${token}"
+      secret_b=""
+      guild_id=""
+      thread_isolation="false"
+      enable_feishu_card="true"
+      ;;
+    discord)
+      read -r -s -p "Discord bot token (leave blank to keep current): " input
+      echo
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        token="${input}"
+      fi
+      if [[ -z "${token}" ]]; then
+        echo "Token cannot be empty."
+        pause
+        return 0
+      fi
+      read -r -p "Discord guild_id [${guild_id:-none}]: " input
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        guild_id="${input}"
+      fi
+      read -r -p "Allow users [${allow_from:-*}]: " input
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        allow_from="${input}"
+      fi
+      allow_from="${allow_from:-*}"
+      local thread_default="N"
+      if [[ "${thread_isolation}" == "true" ]]; then
+        thread_default="Y"
+      fi
+      if prompt_yes_no "Enable thread isolation? (y/N):" "${thread_default}"; then
+        thread_isolation="true"
+      else
+        thread_isolation="false"
+      fi
+      secret_a="${token}"
+      secret_b=""
+      enable_feishu_card="true"
+      ;;
+    feishu)
+      read -r -p "Feishu app_id [${app_id:-none}]: " input
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        app_id="${input}"
+      fi
+      read -r -s -p "Feishu app_secret (leave blank to keep current): " input
+      echo
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        app_secret="${input}"
+      fi
+      if [[ -z "${app_id}" || -z "${app_secret}" ]]; then
+        echo "app_id/app_secret cannot be empty."
+        pause
+        return 0
+      fi
+      read -r -p "Allow users [${allow_from:-*}]: " input
+      input="$(trim "${input}")"
+      if [[ -n "${input}" ]]; then
+        allow_from="${input}"
+      fi
+      allow_from="${allow_from:-*}"
+      local feishu_card_default="N"
+      if [[ "${enable_feishu_card}" == "true" ]]; then
+        feishu_card_default="Y"
+      fi
+      if prompt_yes_no "Enable Feishu card replies? (Y/n):" "${feishu_card_default}"; then
+        enable_feishu_card="true"
+      else
+        enable_feishu_card="false"
+      fi
+      secret_a="${app_id}"
+      secret_b="${app_secret}"
+      guild_id=""
+      thread_isolation="false"
+      ;;
+  esac
+
+  echo
+  echo "=== Confirm project update ==="
+  echo "Name: ${project_name}"
+  echo "Agent: ${agent_type} (mode=${agent_mode})"
+  echo "Work dir: ${work_dir}"
+  echo "Platform: ${platform_type}"
+  echo "Allow users: ${allow_from}"
+
+  if ! prompt_yes_no "Apply update to config.toml? (Y/n):" "Y"; then
+    echo "Cancelled."
+    pause
+    return 0
+  fi
+
+  cc_connect_replace_project_block \
+    "${cfg}" \
+    "${start}" \
+    "${end}" \
+    "${project_name}" \
+    "${agent_type}" \
+    "${agent_mode}" \
+    "${work_dir}" \
+    "${platform_type}" \
+    "${admin_from}" \
+    "${allow_from}" \
+    "${secret_a}" \
+    "${secret_b}" \
+    "${guild_id}" \
+    "${thread_isolation}" \
+    "${enable_feishu_card}"
+
+  echo "Project updated: ${project_name}"
+  pause
+}
+
+menu_cc_connect_delete_project() {
+  local cfg="$1"
+  if ! cc_connect_print_project_list "${cfg}"; then
+    pause
+    return 0
+  fi
+  echo
+  local pick
+  pick="$(prompt_project_index "${cfg}" "Select project index to delete (blank to cancel): ")" || return 0
+  local range
+  range="$(cc_connect_get_project_range "${cfg}" "${pick}")" || return 0
+  local start end name
+  IFS='|' read -r start end name <<<"${range}"
+
+  if ! prompt_yes_no "Delete project '${name}'? This cannot be undone. (y/N):" "N"; then
+    echo "Cancelled."
+    pause
+    return 0
+  fi
+
+  cc_connect_delete_project_block "${cfg}" "${start}" "${end}"
+  echo "Project deleted: ${name}"
+  pause
+}
+
+menu_cc_connect_config_manager() {
+  local cfg
+  cfg="$(cc_connect_config_path)"
+
+  if ! ensure_cc_connect_config "${cfg}"; then
+    echo "Unable to prepare cc-connect config: ${cfg}" >&2
+    pause
+    return 1
+  fi
+
+  while true; do
+    echo
+    echo "=== cc-connect config manager ==="
+    echo "Config: ${cfg}"
+    echo "1. List projects"
+    echo "2. View project detail"
+    echo "3. Edit project"
+    echo "4. Delete project"
+    echo "5. Show raw config"
+    echo "0. Back"
+    echo
+    read -r -p "Select an option: " action
+    case "${action}" in
+      1)
+        echo
+        cc_connect_print_project_list "${cfg}" || true
+        pause
+        ;;
+      2)
+        menu_cc_connect_project_detail "${cfg}"
+        ;;
+      3)
+        menu_cc_connect_edit_project "${cfg}"
+        ;;
+      4)
+        menu_cc_connect_delete_project "${cfg}"
+        ;;
+      5)
+        echo
+        sed -n '1,240p' "${cfg}" || true
+        pause
+        ;;
+      0)
+        return 0
+        ;;
+      *)
+        echo "Invalid choice."
+        ;;
+    esac
+  done
+}
+
 menu_cc_connect_service_control() {
   while true; do
     local cfg
@@ -1192,27 +1953,80 @@ menu_cc_connect_service_control() {
   done
 }
 
+menu_language_settings() {
+  while true; do
+    local current_label
+    case "${APP_LANG_SETTING}" in
+      auto) current_label="Auto" ;;
+      zh) current_label="中文" ;;
+      en) current_label="English" ;;
+      *) current_label="Auto" ;;
+    esac
+
+    echo
+    echo "=== Language / 语言 ==="
+    echo "Current / 当前: ${current_label}"
+    echo "1. Auto (Follow system locale) / 自动（跟随系统）"
+    echo "2. 中文"
+    echo "3. English"
+    echo "0. Back / 返回"
+    echo
+    read -r -p "Select / 请选择: " action
+    case "${action}" in
+      1)
+        APP_LANG_SETTING="auto"
+        APP_LANG_EFFECTIVE="$(detect_locale_language)"
+        save_language_setting "auto" || true
+        echo "Language set to Auto."
+        pause
+        ;;
+      2)
+        APP_LANG_SETTING="zh"
+        APP_LANG_EFFECTIVE="zh"
+        save_language_setting "zh" || true
+        echo "语言已切换为中文。"
+        pause
+        ;;
+      3)
+        APP_LANG_SETTING="en"
+        APP_LANG_EFFECTIVE="en"
+        save_language_setting "en" || true
+        echo "Language switched to English."
+        pause
+        ;;
+      0)
+        return 0
+        ;;
+      *)
+        echo "Invalid choice."
+        ;;
+    esac
+  done
+}
+
 menu_main() {
   while true; do
     echo
-    echo "=== Coding Agent Config ==="
-    echo "1. Quick configure provider (ccman)"
-    echo "2. Check updates"
-    echo "3. Add workspace"
-    echo "4. Health status"
-    echo "5. cc-connect quick bind"
-    echo "6. cc-connect connection self-check"
-    echo "7. cc-connect service control"
-    echo "0. Exit"
+    echo "=== $(t "Coding Agent 配置工具" "Coding Agent Config") ==="
+    echo "1. $(t "快捷配置服务商 (ccman)" "Quick configure provider (ccman)")"
+    echo "2. $(t "检查更新" "Check updates")"
+    echo "3. $(t "新增工作区" "Add workspace")"
+    echo "4. $(t "健康状态" "Health status")"
+    echo "5. $(t "cc-connect 快速绑定" "cc-connect quick bind")"
+    echo "6. $(t "cc-connect 连接自检" "cc-connect connection self-check")"
+    echo "7. $(t "cc-connect 服务控制" "cc-connect service control")"
+    echo "8. cc-connect config manager"
+    echo "9. Language / 语言"
+    echo "0. $(t "退出" "Exit")"
     echo
-    read -r -p "Select an option: " choice
+    read -r -p "$(t "请选择操作: " "Select an option: ")" choice
 
     case "${choice}" in
       1)
         if have_cmd ccman; then
           ccman
         else
-          echo "ccman not found."
+          echo "$(t "未找到 ccman 命令。" "ccman not found.")"
           pause
         fi
         ;;
@@ -1234,14 +2048,21 @@ menu_main() {
       7)
         menu_cc_connect_service_control
         ;;
+      8)
+        menu_cc_connect_config_manager
+        ;;
+      9)
+        menu_language_settings
+        ;;
       0)
         exit 0
         ;;
       *)
-        echo "Invalid choice."
+        echo "$(t "无效选项。" "Invalid choice.")"
         ;;
     esac
   done
 }
 
+load_language_setting
 menu_main

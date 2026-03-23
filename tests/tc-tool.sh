@@ -16,5 +16,8 @@ run_check "TC-TOOL-09 cloudcli wrapper script exists" test -f cloudcli-wrapper.s
 run_check "TC-TOOL-10 Dockerfile installs cloudcli wrapper" grep -Fq "cloudcli-wrapper.sh" Dockerfile
 run_check "TC-TOOL-11 entrypoint exports CloudCLI workspace root" grep -Fq 'WORKSPACES_ROOT="${workspaces_root}"' entrypoint.sh
 run_check "TC-TOOL-12 cloudcli wrapper has python socket fallback check" grep -Fq "connect_ex((\"127.0.0.1\", port))" cloudcli-wrapper.sh
+run_check "TC-TOOL-13 Dockerfile defines bubblewrap build fallback version" grep -Fq "ARG BWRAP_BUILD_VERSION=" Dockerfile
+run_check "TC-TOOL-14 Dockerfile validates bwrap argv0 support" grep -Fq "bwrap --help 2>/dev/null | grep -q -- --argv0" Dockerfile
+run_check "TC-TOOL-15 BOM records bubblewrap version" grep -Fq "bwrap:" docker/record-bom.sh
 
 summary_and_exit

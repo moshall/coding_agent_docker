@@ -40,6 +40,7 @@ const bom = {
   task_master: sh('task-master --version') || null,
   ccman: sh('ccman --version 2>&1') || null,
   cc_connect: sh('cc-connect --help 2>&1 | head -n 1') || null,
+  bwrap: sh('bwrap --version') || null,
   python: sh('python3 --version'),
   python_libs: sh(
     'python3 -c "import pandas, matplotlib, seaborn, scipy; print(f\\"pandas={pandas.__version__} matplotlib={matplotlib.__version__} seaborn={seaborn.__version__} scipy={scipy.__version__}\\")"'

@@ -10,6 +10,7 @@ ARG CLOUDCLI_VERSION=
 ARG CCMAN_VERSION=
 ARG GH_VERSION=
 ARG CC_CONNECT_VERSION_CHANNEL=baseline
+ARG BWRAP_BUILD_VERSION=0.11.1
 
 FROM golang:1.25-bookworm AS go-builder
 
@@ -68,6 +69,7 @@ ARG CODEX_VERSION=
 ARG CLOUDCLI_VERSION=
 ARG CCMAN_VERSION=
 ARG GH_VERSION=
+ARG BWRAP_BUILD_VERSION=0.11.1
 
 USER root
 
@@ -101,6 +103,42 @@ RUN set -eux; \
       tmux \
       wget; \
     rm -rf /var/lib/apt/lists/*
+
+# Debian bookworm ships bubblewrap 0.8.x, which lacks `--argv0` required by Codex sandbox.
+# If current bwrap is incompatible, build a newer bubblewrap from upstream source.
+RUN set -eux; \
+    if /usr/bin/bwrap --help 2>/dev/null | grep -q -- --argv0; then \
+      echo "bubblewrap already supports --argv0: $(/usr/bin/bwrap --version || true)"; \
+    else \
+      echo "bubblewrap missing --argv0; building v${BWRAP_BUILD_VERSION}"; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        gcc \
+        libc6-dev \
+        libcap-dev \
+        meson \
+        ninja-build \
+        pkg-config; \
+      tmpdir="$(mktemp -d)"; \
+      curl -fsSL "https://github.com/containers/bubblewrap/archive/refs/tags/v${BWRAP_BUILD_VERSION}.tar.gz" -o "${tmpdir}/bubblewrap.tar.gz"; \
+      tar -xzf "${tmpdir}/bubblewrap.tar.gz" -C "${tmpdir}"; \
+      src_dir="$(find "${tmpdir}" -maxdepth 1 -type d -name 'bubblewrap-*' | head -n 1)"; \
+      test -n "${src_dir}"; \
+      meson setup "${tmpdir}/build" "${src_dir}" \
+        --prefix=/usr \
+        --buildtype=release \
+        -Dtests=false \
+        -Dman=disabled \
+        -Dbash_completion=disabled \
+        -Dzsh_completion=disabled \
+        -Dselinux=disabled; \
+      meson compile -C "${tmpdir}/build"; \
+      install -m 0755 "${tmpdir}/build/bwrap" /usr/bin/bwrap; \
+      /usr/bin/bwrap --help 2>/dev/null | grep -q -- --argv0; \
+      apt-get purge -y --auto-remove gcc libc6-dev libcap-dev meson ninja-build pkg-config; \
+      rm -rf "${tmpdir}"; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 RUN set -eux; \
     mkdir -p /etc/apt/keyrings; \

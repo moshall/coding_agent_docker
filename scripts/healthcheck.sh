@@ -62,6 +62,12 @@ check "pid1 is node" "docker exec '${CONTAINER_NAME}' ps -o user= -p 1 | tr -d '
 check "restart count stable" "docker inspect '${CONTAINER_NAME}' --format '{{.RestartCount}}' | grep -Eq '^[0-9]+$'"
 check "cron process" "docker exec '${CONTAINER_NAME}' pgrep -x cron >/dev/null"
 
+if docker exec "${CONTAINER_NAME}" sh -lc 'command -v bwrap >/dev/null 2>&1' >/dev/null 2>&1; then
+  check "bubblewrap supports --argv0" "docker exec '${CONTAINER_NAME}' sh -lc 'bwrap --help 2>/dev/null | grep -q -- --argv0'"
+else
+  log_skip "bubblewrap supports --argv0 :: bwrap missing (Codex may use vendored bwrap)"
+fi
+
 if docker exec "${CONTAINER_NAME}" sh -lc 'command -v tailscaled >/dev/null 2>&1' >/dev/null 2>&1; then
   if docker exec "${CONTAINER_NAME}" sh -lc '[ -e /dev/net/tun ]' >/dev/null 2>&1; then
     check "tailscaled process" "docker exec '${CONTAINER_NAME}' pgrep -x tailscaled >/dev/null"
