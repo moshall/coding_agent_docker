@@ -177,6 +177,7 @@ docker compose pull && docker compose up -d
 | 启动有默认值 | `DATA_ROOT`、`CONTAINER_NAME`、`TZ`、`NODE_ENV`、`PORT_*`、`DOCKER_IMAGE` | 留空会回落到默认值 |
 | 按功能必填 | `ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`OPENROUTER_API_KEY`、`PERPLEXITY_API_KEY` | 只有使用对应产品或 provider 时才需要 |
 | 可选代理/网关 | `ANTHROPIC_BASE_URL`、`OPENAI_BASE_URL` | 使用代理或兼容网关时填写 |
+| Codex 兼容开关 | `CODEX_USE_LEGACY_LANDLOCK`（默认 `true`） | 受限 Docker/1Panel 环境建议保持开启，减少 namespace/landlock 触发的终端调用失败；设为 `false` 可关闭 |
 | Task Master 可选项 | `TASKMASTER_MAIN_PROVIDER`、`TASKMASTER_MAIN_MODEL`、`TASKMASTER_RESEARCH_*`、`TASKMASTER_FALLBACK_*` | 默认主模型已设置为 Claude Sonnet |
 | 可选系统能力 | `GH_TOKEN`、`TAILSCALE_AUTHKEY`、`TAILSCALE_HOSTNAME` | 不影响基础启动 |
 | CloudCLI | `CLOUDCLI_ENABLE`（默认启用）、`CLOUDCLI_PORT`（容器内端口，默认 `3001`）、`PORT_CLOUDCLI`（Compose 映射）、`CLOUDCLI_WORKSPACES_ROOT`（默认 `/home/node`）、`CLOUDCLI_DEFAULT_WORKSPACE_PATH`（默认 `/home/node/project`） | Web UI；设为 `CLOUDCLI_ENABLE=false` 可跳过开机自启 |
@@ -223,7 +224,7 @@ docker compose pull && docker compose up -d
 | 目录 | 作用 |
 | --- | --- |
 | `${DATA_ROOT}/project/` | 默认代码与工作区；容器内 `/home/node/project`。若你过去用了 `projects/`，首次启动会自动做兼容（`project` → `projects`） |
-| `${DATA_ROOT}/config/` | 各工具配置与状态（`.claude`、`.codex`、Task Master、CloudCLI、`~/.agents` 等，由脚本链入 `$HOME`） |
+| `${DATA_ROOT}/config/` | 各工具配置与状态（`.claude`、`.codex`、`.cc-connect`、`codingagentconfig` 语言设置、Task Master、CloudCLI、`~/.agents` 等，由脚本链入 `$HOME`） |
 | `${DATA_ROOT}/software/` | 运行时数据：Tailscale 状态、`GOPATH`、`go-build` 缓存、cron、`software/bootstrap` 安装标记等 |
 
 其它约定：
@@ -265,7 +266,7 @@ docker compose pull && docker compose up -d
 <details>
 <summary>展开：config / software 下常见子路径（自动创建，一般不必手改）</summary>
 
-- `config/claude`、`config/codex`、`config/superpowers`、`config/ccman`、`config/gemini`、`config/gemini-home`、`config/opencode`、`config/taskmaster`、`config/gh`、`config/agents`
+- `config/claude`、`config/codex`、`config/superpowers`、`config/ccman`、`config/cc-connect`、`config/codingagentconfig`、`config/gemini`、`config/gemini-home`、`config/opencode`、`config/taskmaster`、`config/gh`、`config/agents`
 - `software/tailscale`、`software/go`、`software/go-build-cache`、`software/cron/crontabs`、`software/bootstrap`、`software/cloudcli-xdg`（CloudCLI 状态与 DB，避免 `~/.config/cloudcli` 符号链接触发 Node `mkdir` 报错）
 
 </details>
@@ -323,6 +324,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - CODEX_MODEL=${CODEX_MODEL:-gpt-5-codex}
+      - CODEX_USE_LEGACY_LANDLOCK=${CODEX_USE_LEGACY_LANDLOCK:-true}
 
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
 
@@ -389,6 +391,7 @@ docker run -d --name coding-agent \
   -e GOCACHE=/home/node/.cache/go-build \
   -e CLOUDCLI_ENABLE=true \
   -e CLOUDCLI_PORT=3001 \
+  -e CODEX_USE_LEGACY_LANDLOCK=true \
   -p 8080:8080 \
   -p 3000:3000 \
   -p 3001:3001 \
@@ -481,7 +484,7 @@ docker compose exec -it coding-agent ccman
 - `6` cc-connect 连接自检：检查配置文件、凭据字段、`work_dir`、进程状态与端口监听，一键定位常见故障
 - `7` cc-connect 服务控制：支持 `start/stop/restart` 和日志查看，方便在菜单里直接拉起或排障
 - `8` cc-connect 配置管理：支持项目列表、详情查看、配置编辑、删除错误项目，避免“配错后只能手改文件”
-- `9` Language / 语言：支持中英文切换（含自动跟随系统语言），设置会写入 `~/.config/codingagentconfig/lang`
+- `9` Language / 语言：支持中英文切换（含自动跟随系统语言），设置会写入 `~/.config/codingagentconfig/lang` 并随 `DATA_ROOT` 持久化
 
 示例：
 
@@ -646,6 +649,8 @@ bwrap --help | grep -- --argv0
 ```
 
 确认 `bubblewrap supports --argv0` 为 `PASS`，再继续排查环境差异（例如自定义基础镜像或手工替换过 `/usr/bin/bwrap`）。
+
+若 `--argv0` 已通过，但仍出现 “No permissions to create a new namespace” 一类 sandbox 报错，通常是运行环境禁用了部分 namespace/landlock 能力。新镜像默认会在 Codex 配置里启用 `use_legacy_landlock`（可通过 `CODEX_USE_LEGACY_LANDLOCK=false` 关闭），以提升这类环境的兼容性。
 
 ### CloudCLI 创建项目只能看到 `/home/node`
 

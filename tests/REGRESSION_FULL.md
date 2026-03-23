@@ -182,6 +182,8 @@ bash tests/run-all.sh
 | TC-PERSIST-04 | compose **无** cargo 卷 |
 | TC-PERSIST-05 | `ensure_ln_home` → `/home/node/project` |
 | TC-PERSIST-05b | 识别 `/home/node/project` 绑定挂载（避免误改符号链接） |
+| TC-PERSIST-05c | `ensure_ln_home` → `/home/node/.cc-connect` |
+| TC-PERSIST-05d | `ensure_ln_home` → `/home/node/.config/codingagentconfig` |
 | TC-PERSIST-06 | `TASKMASTER_ENV` 生成 |
 | TC-PERSIST-07 | `DATA_ROOT` 在 `/root/*` 时 `ensure_data_root_traversable_for_node`（1Panel） |
 
@@ -215,6 +217,8 @@ bash tests/run-all.sh
 | TC-ENV-02 | `TASKMASTER_MAIN_PROVIDER` |
 | TC-ENV-03 | Codex `wire_api = "responses"` |
 | TC-ENV-04～05 | `INSTALL_GO_RUNTIME` / `INSTALL_BUILD_ESSENTIAL` |
+| TC-ENV-06 | `CLOUDCLI_WORKSPACES_ROOT` |
+| TC-ENV-07 | `CODEX_USE_LEGACY_LANDLOCK` |
 
 ---
 

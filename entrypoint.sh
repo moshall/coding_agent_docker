@@ -186,6 +186,8 @@ link_persistence_from_data_root() {
     "${DATA_ROOT}/config/codex" \
     "${DATA_ROOT}/config/superpowers" \
     "${DATA_ROOT}/config/ccman" \
+    "${DATA_ROOT}/config/cc-connect" \
+    "${DATA_ROOT}/config/codingagentconfig" \
     "${DATA_ROOT}/config/gemini" \
     "${DATA_ROOT}/config/gemini-home" \
     "${DATA_ROOT}/config/opencode" \
@@ -207,7 +209,9 @@ link_persistence_from_data_root() {
   ensure_ln_home "/home/node/.codex" "${DATA_ROOT}/config/codex"
   ensure_ln_home "/home/node/.superpowers" "${DATA_ROOT}/config/superpowers"
   ensure_ln_home "/home/node/.ccman" "${DATA_ROOT}/config/ccman"
+  ensure_ln_home "/home/node/.cc-connect" "${DATA_ROOT}/config/cc-connect"
   mkdir -p /home/node/.config
+  ensure_ln_home "/home/node/.config/codingagentconfig" "${DATA_ROOT}/config/codingagentconfig"
   ensure_ln_home "/home/node/.config/gemini" "${DATA_ROOT}/config/gemini"
   ensure_ln_home "/home/node/.gemini" "${DATA_ROOT}/config/gemini-home"
   ensure_ln_home "/home/node/.config/opencode" "${DATA_ROOT}/config/opencode"
@@ -282,6 +286,7 @@ mkdir -p /home/node/.agents/skills
 
 # Own persisted trees (follows symlinks into ${DATA_ROOT})
 for owned_dir in \
+  /home/node/.cc-connect \
   /home/node/.ccman \
   /home/node/.claude \
   /home/node/.codex \
@@ -353,6 +358,43 @@ EOF2
   chown node:node "${CODEX_CONFIG}"
   log "generated: ${CODEX_CONFIG}"
 fi
+
+configure_codex_legacy_landlock() {
+  local env_explicit=0
+  if [[ -n "${CODEX_USE_LEGACY_LANDLOCK+x}" ]]; then
+    env_explicit=1
+  fi
+
+  local desired=true
+  if [[ "${env_explicit}" -eq 1 ]] && ! is_truthy "${CODEX_USE_LEGACY_LANDLOCK:-}"; then
+    desired=false
+  fi
+
+  if ! command -v codex >/dev/null 2>&1; then
+    log "codex CLI not found, skip use_legacy_landlock config"
+    return
+  fi
+
+  # Preserve user-configured value unless env explicitly overrides it.
+  if [[ "${env_explicit}" -eq 0 ]] && [[ -f "${CODEX_CONFIG}" ]] && grep -Eq '^[[:space:]]*use_legacy_landlock[[:space:]]*=' "${CODEX_CONFIG}"; then
+    log "codex use_legacy_landlock already configured, keep as-is"
+    return
+  fi
+
+  local action="enable"
+  if [[ "${desired}" != "true" ]]; then
+    action="disable"
+  fi
+
+  log "codex feature ${action}: use_legacy_landlock"
+  run_with_timeout_as_node 30 "HOME=/home/node codex features ${action} use_legacy_landlock >/dev/null 2>&1"
+
+  if [[ -f "${CODEX_CONFIG}" ]]; then
+    chown node:node "${CODEX_CONFIG}" || true
+  fi
+}
+
+configure_codex_legacy_landlock
 
 GEMINI_CONFIG="/home/node/.config/gemini/config.json"
 if [[ ! -f "${GEMINI_CONFIG}" ]] && [[ -n "${GEMINI_API_KEY:-}" ]]; then

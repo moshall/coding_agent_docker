@@ -10,6 +10,8 @@ run_check "TC-PERSIST-03 entrypoint links from DATA_ROOT" grep -Fq "link_persist
 run_check "TC-PERSIST-04 compose no longer mounts cargo home" bash -c "! grep -Fq 'config/cargo:/home/node/.cargo' docker-compose.yml"
 run_check "TC-PERSIST-05 entrypoint links project workspace" grep -Fq 'ensure_ln_home "/home/node/project"' entrypoint.sh
 run_check "TC-PERSIST-05b entrypoint detects bind-mounted project workspace" grep -Fq "project workspace already bind-mounted at /home/node/project" entrypoint.sh
+run_check "TC-PERSIST-05c entrypoint links cc-connect config into DATA_ROOT" grep -Fq 'ensure_ln_home "/home/node/.cc-connect"' entrypoint.sh
+run_check "TC-PERSIST-05d entrypoint links codingagentconfig language dir into DATA_ROOT" grep -Fq 'ensure_ln_home "/home/node/.config/codingagentconfig"' entrypoint.sh
 run_check "TC-PERSIST-06 taskmaster global env is generated" grep -Fq "TASKMASTER_ENV" entrypoint.sh
 run_check "TC-PERSIST-07 root DATA_ROOT traversal for node (1Panel)" grep -Fq "ensure_data_root_traversable_for_node" entrypoint.sh
 
